@@ -59,10 +59,16 @@ cd backend && .venv/bin/pytest -q && .venv/bin/ruff check app tests
 cd frontend && npm run build
 ```
 
-## Produção (Docker)
+## Produção no Railway
+
+Veja o passo a passo em [`docs/deploy-railway.md`](docs/deploy-railway.md):
+três serviços (PostgreSQL, API e front), cada um com seu próprio domínio
+público, sem precisar de servidor próprio.
+
+## Produção com Docker Compose (VPS própria)
 
 ```bash
-cp .env.example .env   # ajuste SGG_MODE=http, SGG_BASE_URL, SGG_API_TOKEN, ADMIN_PASSWORD, JWT_SECRET
+cp .env.example .env   # ajuste SGG_MODE=http, SGG_BASE_URL, SGG_API_KEY, ADMIN_PASSWORD, JWT_SECRET
 docker compose up -d --build
 ```
 

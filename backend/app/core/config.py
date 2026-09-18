@@ -5,6 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +20,18 @@ class Settings(BaseSettings):
     # Banco
     database_url: str = "sqlite:///./totem.db"
     auto_create_schema: bool = True
+
+    @field_validator("database_url")
+    @classmethod
+    def _normalizar_database_url(cls, v: str) -> str:
+        """Plataformas como Railway/Heroku injetam `postgres://` ou `postgresql://`
+        sem driver explícito, o que faz o SQLAlchemy tentar usar psycopg2 (não
+        instalado neste projeto — usamos psycopg 3). Reescrevemos para o driver
+        correto sem exigir que a variável de ambiente seja editada manualmente."""
+        for prefixo in ("postgres://", "postgresql://"):
+            if v.startswith(prefixo) and not v.startswith("postgresql+"):
+                return "postgresql+psycopg://" + v[len(prefixo) :]
+        return v
 
     # SGG
     sgg_mode: Literal["fake", "http"] = "fake"

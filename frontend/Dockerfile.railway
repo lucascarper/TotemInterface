@@ -1,0 +1,26 @@
+# Build/serve para o Railway: cada serviço tem seu próprio domínio público,
+# então front e API são origens diferentes (cross-origin com CORS), ao
+# contrário do frontend/Dockerfile (nginx) usado no docker-compose, que serve
+# tudo na mesma origem via proxy. Veja docs/deploy-railway.md.
+
+FROM node:20-alpine AS build
+WORKDIR /app
+# Preenchido pelo Railway como variável de build do serviço "web", apontando
+# para o domínio público do serviço "api" (ex.: ${{api.RAILWAY_PUBLIC_DOMAIN}}).
+ARG VITE_API_BASE_URL=""
+ARG VITE_TOTEM_API_KEY=""
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL VITE_TOTEM_API_KEY=$VITE_TOTEM_API_KEY
+COPY package*.json ./
+RUN npm ci --no-audit --no-fund
+COPY . .
+RUN npm run build
+
+FROM node:20-alpine
+WORKDIR /app
+RUN npm install -g serve@14
+COPY --from=build /app/dist ./dist
+ENV PORT=3000
+EXPOSE 3000
+# -s: fallback de SPA (rotas do React Router). Escuta em todas as interfaces,
+# na porta que o Railway injetar via $PORT.
+CMD ["sh", "-c", "serve -s dist -l tcp://0.0.0.0:${PORT}"]
