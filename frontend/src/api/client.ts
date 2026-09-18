@@ -40,6 +40,20 @@ export async function request<T>(path: string, opts: Options = {}): Promise<T> {
   clearTimeout(timer);
 
   if (resp.status === 204) return undefined as T;
+
+  const isJson = (resp.headers.get("content-type") ?? "").includes("application/json");
+  if (!isJson) {
+    // A resposta não é JSON: normalmente indica que a requisição foi parar no
+    // lugar errado (ex.: VITE_API_BASE_URL vazia/incorreta faz o navegador
+    // chamar o próprio front, que devolve sua página HTML com status 200) ou
+    // um erro de infraestrutura (proxy/gateway) em vez do backend real.
+    throw new ApiError(
+      resp.ok ? 502 : resp.status,
+      "RESPOSTA_INESPERADA",
+      "A API respondeu de forma inesperada. Verifique a configuração de conexão e tente novamente.",
+    );
+  }
+
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const codigo = data?.codigo ?? (resp.status === 401 ? "NAO_AUTORIZADO" : "ERRO");
