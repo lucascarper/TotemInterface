@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore"
+        env_file=(".env", "backend/.env", "../.env"), env_file_encoding="utf-8", extra="ignore"
     )
 
     app_env: Literal["development", "test", "production"] = "development"
@@ -38,6 +38,16 @@ class Settings(BaseSettings):
 
     # Lista separada por vírgula (mantida como texto para não ser interpretada como JSON).
     cors_origins: str = "http://localhost:5173"
+    # Em desenvolvimento, aceita qualquer porta de localhost (previews, tablets via túnel local).
+    cors_origin_regex: str | None = None
+
+    @property
+    def cors_origin_regex_efetivo(self) -> str | None:
+        if self.cors_origin_regex:
+            return self.cors_origin_regex
+        if self.app_env == "development":
+            return r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+        return None
 
     @property
     def cors_origins_list(self) -> list[str]:
