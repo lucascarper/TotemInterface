@@ -386,3 +386,42 @@ def test_consulta_d000_sem_resultado_vira_indisponivel():
     handler = lambda req: httpx.Response(200, json={"statusCode": "D000", "statusMsg": "ok"})  # noqa: E731
     with pytest.raises(SggIndisponivelError):
         gateway(handler).listar_locais()
+
+
+def test_criar_agendamento_aceita_id_no_retorno_real_do_sgg():
+    """Formato real observado em produção: {"type":"SUCESSO","msg":"...","id":"134424"}."""
+
+    def handler(req):
+        if req.url.path.endswith("/agenda/"):
+            return httpx.Response(200, json=ok(AGENDAS))
+        if req.method == "POST":
+            bruto = (
+                '{"returnInfo":"{"type":"SUCESSO","msg":"Cadastro efetuado com sucesso",'
+                '"id":"134424"}","statusCode":"D000","statusMsg":"ok"}'
+            )
+            return httpx.Response(200, content=bruto.encode())
+        assert body_of(req)["codigo"] == "134424"
+        return httpx.Response(
+            200,
+            json=ok(
+                [
+                    {
+                        "id_agendamento": "134424",
+                        "id_funcionario": "1",
+                        "agenda": "TESTE TI",
+                        "data_agendamento": "2026-09-17",
+                        "hora_agendamento": "",
+                        "situacao": "Agendado",
+                        "data_hora_criacao": "2026-09-17 10:07:00",
+                    }
+                ]
+            ),
+        )
+
+    paciente = to_paciente(
+        {"id_funcionario": "1", "id_empresa": "9", "nome": "L", "CPF": "529.982.247-25"}
+    )
+    ag = gateway(handler).criar_agendamento(
+        paciente, "65", datetime(2026, 9, 17, 10, 7), TipoAtendimento.NORMAL
+    )
+    assert ag.id_sgg == "134424"

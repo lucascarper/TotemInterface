@@ -223,7 +223,9 @@ class SggHttpGateway:
             # Agenda por hora marcada exige horário alinhado à grade da agenda.
             body["hora_agendamento"] = _proximo_slot(data_hora, agenda.duracao_padrao_minutos or 5)
         info = self._escrever("POST", "agendamento/", body)
-        novo_id = str(info.get("codigo", ""))
+        # A doc fala em "codigo", mas a API real devolve
+        # {"type": "SUCESSO", "msg": "...", "id": "134424"}. Aceitamos os dois.
+        novo_id = str(info.get("codigo") or info.get("id") or "")
         if not novo_id:
             raise SggOperacaoRecusadaError(
                 "POST", f"SGG não devolveu o código do agendamento (retorno: {info})"

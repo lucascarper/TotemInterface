@@ -111,6 +111,21 @@ formas de resolver:
 No tablet, abra o totem no navegador e use "Adicionar à tela inicial" para
 rodar em modo PWA de tela cheia.
 
+## 5. Configurar as agendas no painel (obrigatório)
+
+O banco do Railway começa vazio: a configuração feita em desenvolvimento
+(SQLite local) **não é levada** para lá. Sem este passo o totem não consulta
+nenhuma agenda e, sem agendamento, não sabe onde criar o encaixe. O check-in
+falha com HTTP 409 e a tela "Não foi possível registrar".
+
+1. Entre em `https://<domínio do web>/admin` e clique em **Sincronizar com o SGG**.
+2. Marque as agendas a monitorar e escolha a **agenda de encaixe** de cada uma.
+3. Marque uma delas como **encaixe padrão** e clique em **Salvar alterações**.
+
+Para diagnosticar uma falha no check-in, abra a aba **Auditoria** do painel:
+"Sem agenda de encaixe configurada" indica este passo pendente, enquanto
+"SGG recusou: ..." traz o código de erro devolvido pelo SGG.
+
 ## Atualizações seguintes
 
 Cada `git push` para a branch conectada dispara um novo deploy automático dos
