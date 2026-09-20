@@ -1,5 +1,10 @@
 import { request } from "./client";
-import type { ConfiguracaoAgenda, LogItem, StatusSincronizacao } from "./types";
+import type {
+  ConfiguracaoAgenda,
+  LogItem,
+  ResultadoEncaixeAutomatico,
+  StatusSincronizacao,
+} from "./types";
 
 const TOKEN_KEY = "totem.admin.token";
 
@@ -16,6 +21,7 @@ export interface ConfiguracaoEntrada {
   monitorada: boolean;
   agenda_encaixe_id_sgg: string | null;
   encaixe_padrao: boolean;
+  incluir_da_unidade: boolean;
 }
 
 export const adminApi = {
@@ -26,6 +32,12 @@ export const adminApi = {
     request<void>("/admin/configuracoes", { method: "PUT", body: { configuracoes }, headers: auth() }),
   sincronizar: () =>
     request<{ agendas: number; locais: number }>("/admin/sincronizar", { method: "POST", headers: auth() }),
+  simularEncaixeAutomatico: () =>
+    request<ResultadoEncaixeAutomatico>("/admin/encaixe-automatico/executar?simular=true", {
+      method: "POST",
+      headers: auth(),
+      timeoutMs: 60000,
+    }),
   statusSincronizacao: () => request<StatusSincronizacao>("/admin/sincronizacao", { headers: auth() }),
   logs: (limite = 100) => request<LogItem[]>(`/admin/logs?limite=${limite}`, { headers: auth() }),
 };

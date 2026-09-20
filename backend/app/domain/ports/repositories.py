@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Protocol
 
 from app.domain.entities import Agenda, ConfiguracaoAgenda, LocalAtendimento, LogOperacao
@@ -34,6 +35,23 @@ class SincronizacaoRepository(Protocol):
     def ultima_execucao(self) -> dict | None: ...
 
 
+class EncaixeAutomaticoRepository(Protocol):
+    """Livro-razão das inclusões automáticas: garante uma por pessoa/agenda/dia."""
+
+    def situacoes_do_dia(self, data: date, agenda_encaixe_id_sgg: str) -> dict[str, str]: ...
+
+    def registrar(
+        self,
+        data: date,
+        agenda_encaixe_id_sgg: str,
+        funcionario_id_sgg: str,
+        situacao: str,
+        agendamento_origem_id_sgg: str | None = None,
+        agendamento_criado_id_sgg: str | None = None,
+        detalhe: str | None = None,
+    ) -> bool: ...
+
+
 class UnitOfWork(Protocol):
     """Agrupa repositórios em uma transação."""
 
@@ -42,6 +60,7 @@ class UnitOfWork(Protocol):
     configuracoes: ConfiguracaoAgendaRepository
     logs: LogOperacaoRepository
     sincronizacoes: SincronizacaoRepository
+    encaixes_automaticos: EncaixeAutomaticoRepository
 
     def __enter__(self) -> UnitOfWork: ...
     def __exit__(self, *args) -> None: ...

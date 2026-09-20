@@ -10,6 +10,7 @@ const ROTULOS: Record<string, string> = {
   BUSCA_AGENDAMENTO: "Busca de agendamento",
   ATUALIZACAO_STATUS: "Atualização de status",
   CRIACAO_AGENDAMENTO: "Criação de encaixe",
+  ENCAIXE_AUTOMATICO: "Encaixe automático",
   SINCRONIZACAO: "Sincronização",
   ERRO: "Erro",
 };

@@ -1,8 +1,19 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -41,6 +52,7 @@ class ConfiguracaoAgendaModel(Base):
     monitorada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     agenda_encaixe_id_sgg: Mapped[str | None] = mapped_column(String(64), nullable=True)
     encaixe_padrao: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    incluir_da_unidade: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
 class LogOperacaoModel(Base):
@@ -70,3 +82,24 @@ class SincronizacaoModel(Base):
     )
     sucesso: Mapped[bool] = mapped_column(Boolean, nullable=False)
     mensagem: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class EncaixeAutomaticoModel(Base):
+    __tablename__ = "encaixes_automaticos"
+    __table_args__ = (
+        UniqueConstraint(
+            "data", "agenda_encaixe_id_sgg", "funcionario_id_sgg", name="uq_encaixe_auto_dia_pessoa"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    agenda_encaixe_id_sgg: Mapped[str] = mapped_column(String(64), nullable=False)
+    funcionario_id_sgg: Mapped[str] = mapped_column(String(64), nullable=False)
+    situacao: Mapped[str] = mapped_column(String(20), nullable=False)
+    agendamento_origem_id_sgg: Mapped[str | None] = mapped_column(String(64))
+    agendamento_criado_id_sgg: Mapped[str | None] = mapped_column(String(64))
+    detalhe: Mapped[str | None] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

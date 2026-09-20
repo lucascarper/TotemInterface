@@ -31,6 +31,7 @@ class ListarConfiguracoesUseCase:
                     monitorada=c.monitorada,
                     agenda_encaixe_id_sgg=c.agenda_encaixe_id_sgg,
                     encaixe_padrao=c.encaixe_padrao,
+                    incluir_da_unidade=c.incluir_da_unidade,
                 )
             )
         return saida
@@ -45,7 +46,8 @@ class SalvarConfiguracoesUseCase:
             todas = uow.agendas.listar(apenas_ativas=False)
             conhecidas = {a.id_sgg for a in todas}
             ativas = {a.id_sgg for a in todas if a.ativa}
-            self._validar(entradas, conhecidas, ativas)
+            chegada = {a.id_sgg for a in todas if a.por_ordem_chegada}
+            self._validar(entradas, conhecidas, ativas, chegada)
             uow.configuracoes.salvar_todas(
                 [
                     ConfiguracaoAgenda(
@@ -59,6 +61,12 @@ class SalvarConfiguracoesUseCase:
                         encaixe_padrao=(
                             e.encaixe_padrao and e.monitorada and e.agenda_id_sgg in ativas
                         ),
+                        incluir_da_unidade=(
+                            e.incluir_da_unidade
+                            and e.monitorada
+                            and e.agenda_id_sgg in ativas
+                            and bool(e.agenda_encaixe_id_sgg)
+                        ),
                     )
                     for e in entradas
                 ]
@@ -66,7 +74,7 @@ class SalvarConfiguracoesUseCase:
             uow.commit()
 
     @staticmethod
-    def _validar(entradas, conhecidas: set[str], ativas: set[str]) -> None:
+    def _validar(entradas, conhecidas: set[str], ativas: set[str], chegada: set[str]) -> None:
         ids = [e.agenda_id_sgg for e in entradas]
         if len(ids) != len(set(ids)):
             raise ConfiguracaoInvalidaError("Agenda repetida na configuração.")
@@ -75,7 +83,13 @@ class SalvarConfiguracoesUseCase:
                 raise ConfiguracaoInvalidaError(f"Agenda desconhecida: {e.agenda_id_sgg}")
             # Agenda inativa/excluída no SGG é sempre salva como desmarcada; só
             # validamos o encaixe das que continuam valendo.
-            if not (e.monitorada and e.agenda_id_sgg in ativas) or not e.agenda_encaixe_id_sgg:
+            if not (e.monitorada and e.agenda_id_sgg in ativas):
+                continue
+            if e.incluir_da_unidade and not e.agenda_encaixe_id_sgg:
+                raise ConfiguracaoInvalidaError(
+                    "Para incluir agendamentos da unidade é preciso escolher a agenda de encaixe."
+                )
+            if not e.agenda_encaixe_id_sgg:
                 continue
             if e.agenda_encaixe_id_sgg not in conhecidas:
                 raise ConfiguracaoInvalidaError(
@@ -84,6 +98,10 @@ class SalvarConfiguracoesUseCase:
             if e.agenda_encaixe_id_sgg not in ativas:
                 raise ConfiguracaoInvalidaError(
                     f"Encaixe {e.agenda_encaixe_id_sgg}: agenda inativa ou excluída no SGG."
+                )
+            if e.incluir_da_unidade and e.agenda_encaixe_id_sgg not in chegada:
+                raise ConfiguracaoInvalidaError(
+                    "A inclusão automática só funciona com agenda de encaixe por ordem de chegada."
                 )
         padroes = [
             e for e in entradas if e.encaixe_padrao and e.monitorada and e.agenda_id_sgg in ativas

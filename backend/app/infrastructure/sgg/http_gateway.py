@@ -15,7 +15,9 @@ Particularidades do contrato (verificadas contra a API real):
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from datetime import date, datetime, timedelta
 
 import httpx
@@ -34,6 +36,9 @@ from app.infrastructure.sgg import mappers
 
 logger = logging.getLogger(__name__)
 
+# Só estes códigos são falha de infraestrutura/autenticação: A000/A001 (chave) e S000-S006
+# (servidor). Outros começando com "A" (ex.: AG016 "agendamento não encontrado") são de negócio.
+_INFRA = re.compile(r"^[AS]\d{3}$")
 STATUS_OK = "D000"
 STATUS_VAZIO = "D001"
 TAMANHO_PAGINA = 100
@@ -85,7 +90,7 @@ class SggHttpGateway:
             raise SggIndisponivelError("Resposta inesperada do SGG")
 
         status = str(data.get("statusCode", STATUS_OK))
-        if status.startswith("A") or status.startswith("S"):
+        if _INFRA.match(status):
             # Autenticação / servidor: problema de infraestrutura, não de negócio.
             raise SggIndisponivelError(f"SGG {status}: {data.get('statusMsg', '')}")
         if resp.status_code >= 400:
@@ -93,8 +98,15 @@ class SggHttpGateway:
         return data
 
     def _consultar(self, path: str, filtros: dict) -> list[dict]:
-        """GET paginado; devolve todos os itens de `resultado`."""
+        """GET paginado; devolve todos os itens de `resultado`, sem repetições.
+
+        A paginação do SGG não é confiável: a página 0 pode trazer mais linhas que o
+        `tamanho` pedido e a página seguinte repete parte delas (observado: 217 linhas
+        para 159 agendamentos distintos). Por isso deduplicamos por conteúdo exato e
+        paramos quando uma página não traz nada novo.
+        """
         itens: list[dict] = []
+        vistos: set[str] = set()
         for pagina in range(MAX_PAGINAS):
             body = {**filtros, "paginador": {"pagina": pagina, "tamanho": TAMANHO_PAGINA}}
             data = self._request("GET", path, body)
@@ -108,8 +120,14 @@ class SggHttpGateway:
                 # para o totem tentar de novo em vez de agir sobre dados incompletos.
                 logger.error("SGG respondeu D000 sem 'resultado' em %s: %.300s", path, data)
                 raise SggIndisponivelError("Resposta incompleta do SGG")
-            itens.extend(mappers.unwrap_list(data.get("resultado")))
-            if not data.get("temProximaPagina"):
+            novos = 0
+            for item in mappers.unwrap_list(data.get("resultado")):
+                chave = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                if chave not in vistos:
+                    vistos.add(chave)
+                    itens.append(item)
+                    novos += 1
+            if not data.get("temProximaPagina") or novos == 0:
                 break
         return itens
 
@@ -211,13 +229,30 @@ class SggHttpGateway:
     ) -> Agendamento:
         if not paciente.empresa_id_sgg:
             raise SggOperacaoRecusadaError("EMPRESA", "Funcionário sem empresa vinculada no SGG.")
+        novo_id = self.registrar_agendamento(
+            paciente.id_sgg,
+            paciente.empresa_id_sgg,
+            agenda_id_sgg,
+            data_hora,
+            observacao or f"Totem ({tipo_atendimento.value.lower()})",
+        )
+        return self._obter_agendamento(novo_id)
+
+    def registrar_agendamento(
+        self,
+        funcionario_id_sgg: str,
+        empresa_id_sgg: str,
+        agenda_id_sgg: str,
+        data_hora: datetime,
+        observacao: str,
+    ) -> str:
         agenda = self._agenda_pelo_id(agenda_id_sgg)
         body: dict = {
-            "id_empresa": paciente.empresa_id_sgg,
-            "id_funcionario": paciente.id_sgg,
+            "id_empresa": empresa_id_sgg,
+            "id_funcionario": funcionario_id_sgg,
             "agenda": agenda.nome,
             "data_agendamento": data_hora.date().isoformat(),
-            "observacoes": observacao or f"Totem ({tipo_atendimento.value.lower()})",
+            "observacoes": observacao,
         }
         if not agenda.por_ordem_chegada:
             # Agenda por hora marcada exige horário alinhado à grade da agenda.
@@ -230,7 +265,24 @@ class SggHttpGateway:
             raise SggOperacaoRecusadaError(
                 "POST", f"SGG não devolveu o código do agendamento (retorno: {info})"
             )
-        return self._obter_agendamento(novo_id)
+        return novo_id
+
+    def listar_agendamentos_da_agenda(self, agenda_id_sgg: str, data: date) -> list[Agendamento]:
+        agenda = self._agenda_pelo_id(agenda_id_sgg)
+        itens = self._consultar(
+            "agendamento/",
+            {
+                "agenda": agenda.nome,
+                "data_hora_agendamento_aPartirDe": f"{data.isoformat()} 00:00:00",
+                "data_hora_agendamento_ate": f"{data.isoformat()} 23:59:59",
+            },
+        )
+        # O filtro por nome pode ser aproximado ("TESTE TI" x "TESTE TI 2"): confirma o nome exato.
+        return [
+            mappers.to_agendamento(i, agenda.id_sgg)
+            for i in itens
+            if str(i.get("agenda", "")).strip() == agenda.nome
+        ]
 
 
 def _proximo_slot(momento: datetime, duracao_minutos: int) -> str:

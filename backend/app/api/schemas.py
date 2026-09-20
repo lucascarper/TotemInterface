@@ -69,6 +69,7 @@ class ConfiguracaoAgendaItem(BaseModel):
     monitorada: bool
     agenda_encaixe_id_sgg: str | None
     encaixe_padrao: bool
+    incluir_da_unidade: bool
 
 
 class ConfiguracaoAgendaEntrada(BaseModel):
@@ -76,6 +77,7 @@ class ConfiguracaoAgendaEntrada(BaseModel):
     monitorada: bool = False
     agenda_encaixe_id_sgg: str | None = None
     encaixe_padrao: bool = False
+    incluir_da_unidade: bool = False
 
 
 class SalvarConfiguracoesRequest(BaseModel):
@@ -108,3 +110,20 @@ class LogItem(BaseModel):
     agenda_id_sgg: str | None
     tipo_atendimento: TipoAtendimento | None
     detalhes: dict
+
+
+class InclusaoItem(BaseModel):
+    funcionario_id_sgg: str
+    agenda_origem_nome: str
+    agenda_encaixe_nome: str
+    agendamento_origem_id_sgg: str
+
+
+class EncaixeAutomaticoResponse(BaseModel):
+    simulado: bool
+    incluidos: list[InclusaoItem]
+    ja_existiam: int
+    sem_cadastro: int
+    recusados: int
+    adiados: int
+    avisos: list[str]

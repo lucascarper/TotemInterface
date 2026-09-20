@@ -43,6 +43,26 @@ def sincronizar(container: ContainerDep):
     )
 
 
+@protegido.post("/encaixe-automatico/executar", response_model=schemas.EncaixeAutomaticoResponse)
+def executar_encaixe_automatico(container: ContainerDep, simular: bool = Query(True)):
+    """Simula (padrão) ou executa agora a inclusão automática no encaixe.
+
+    A simulação considera toda agenda monitorada com encaixe, mesmo sem a opção ligada,
+    para o administrador ver o efeito antes de ativar. A execução real só age nas
+    agendas com a opção ligada.
+    """
+    r = container.incluir_no_encaixe().executar(simular=simular)
+    return schemas.EncaixeAutomaticoResponse(
+        simulado=r.simulado,
+        incluidos=[schemas.InclusaoItem(**asdict(i)) for i in r.incluidos],
+        ja_existiam=r.ja_existiam,
+        sem_cadastro=r.sem_cadastro,
+        recusados=r.recusados,
+        adiados=r.adiados,
+        avisos=r.avisos,
+    )
+
+
 @protegido.get("/sincronizacao", response_model=schemas.StatusSincronizacao)
 def status_sincronizacao(container: ContainerDep):
     with container.uow as uow:

@@ -425,3 +425,45 @@ def test_criar_agendamento_aceita_id_no_retorno_real_do_sgg():
         paciente, "65", datetime(2026, 9, 17, 10, 7), TipoAtendimento.NORMAL
     )
     assert ag.id_sgg == "134424"
+
+
+def test_paginacao_do_sgg_com_linhas_repetidas_e_deduplicada():
+    """Observado no SGG real: a página 0 excede o tamanho e a 1 repete linhas da 0."""
+    linhas = [
+        {"id_agenda": str(n), "nome": f"A{n}", "situacao": "Ativa", "forma_atendimento": "Hora"}
+        for n in range(5)
+    ]
+
+    def handler(req):
+        pagina = body_of(req)["paginador"]["pagina"]
+        if pagina == 0:
+            return httpx.Response(200, json=ok(linhas[:4], proxima=True))
+        return httpx.Response(200, json=ok(linhas[2:], proxima=False))  # repete 2 e 3, traz 4
+
+    agendas = gateway(handler).listar_agendas()
+    assert [a.id_sgg for a in agendas] == ["0", "1", "2", "3", "4"]
+
+
+def test_paginacao_para_quando_a_pagina_nao_traz_nada_novo():
+    chamadas = []
+    linha = {"id_agenda": "1", "nome": "A", "situacao": "Ativa", "forma_atendimento": "Hora"}
+
+    def handler(req):
+        chamadas.append(body_of(req)["paginador"]["pagina"])
+        return httpx.Response(200, json=ok([linha], proxima=True))  # SGG insiste em "próxima"
+
+    assert len(gateway(handler).listar_agendas()) == 1
+    assert chamadas == [0, 1]
+
+
+def test_codigo_de_negocio_que_comeca_com_a_nao_e_falha_de_infraestrutura():
+    """AG016 ("agendamento não encontrado") não é o mesmo que A001 (chave inválida)."""
+
+    def handler(req):
+        return httpx.Response(
+            200, json={"statusCode": "AG016", "statusMsg": "Código de agendamento não encontrado"}
+        )
+
+    with pytest.raises(SggOperacaoRecusadaError) as exc:
+        gateway(handler)._obter_agendamento("999")
+    assert exc.value.codigo_sgg == "AG016"

@@ -16,6 +16,7 @@ from app.application.dto import CheckinDTO
 from app.application.use_cases._agendamentos import (
     STATUS_ELEGIVEIS_CHECKIN,
     STATUS_JA_EM_FILA,
+    agendas_consultadas,
     listar_agendamentos_do_dia,
 )
 from app.domain.entities import (
@@ -56,7 +57,7 @@ class RealizarCheckinUseCase:
                 configs = uow.configuracoes.listar_monitoradas()
                 agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
-            monitoradas = [c.agenda_id_sgg for c in configs]
+            monitoradas = agendas_consultadas(configs)
             agendamentos = listar_agendamentos_do_dia(
                 self._sgg, paciente.id_sgg, monitoradas, agora
             )

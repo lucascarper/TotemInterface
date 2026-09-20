@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from app.application.dto import IdentificacaoDTO, PacientePublicoDTO
-from app.application.use_cases._agendamentos import localizar_agendamento_do_dia
+from app.application.use_cases._agendamentos import (
+    agendas_consultadas,
+    localizar_agendamento_do_dia,
+)
 from app.domain.entities import Cpf, LogOperacao, TipoOperacao
 from app.domain.exceptions import PacienteNaoEncontradoError, SggIndisponivelError
 from app.domain.ports import Clock, SggGateway, UnitOfWork
@@ -29,7 +32,7 @@ class IdentificarPacienteUseCase:
             raise PacienteNaoEncontradoError()
 
         with self._uow as uow:
-            monitoradas = [c.agenda_id_sgg for c in uow.configuracoes.listar_monitoradas()]
+            monitoradas = agendas_consultadas(uow.configuracoes.listar_monitoradas())
             agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
         agendamento = localizar_agendamento_do_dia(

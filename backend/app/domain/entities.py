@@ -33,6 +33,7 @@ class TipoOperacao(StrEnum):
     BUSCA_AGENDAMENTO = "BUSCA_AGENDAMENTO"
     ATUALIZACAO_STATUS = "ATUALIZACAO_STATUS"
     CRIACAO_AGENDAMENTO = "CRIACAO_AGENDAMENTO"
+    ENCAIXE_AUTOMATICO = "ENCAIXE_AUTOMATICO"
     SINCRONIZACAO = "SINCRONIZACAO"
     ERRO = "ERRO"
 
@@ -130,6 +131,7 @@ class Agendamento:
     status: StatusAgendamento
     tipo_atendimento: TipoAtendimento | None = None
     observacao: str | None = None
+    empresa_id_sgg: str | None = None
 
 
 @dataclass(slots=True)
@@ -140,6 +142,8 @@ class ConfiguracaoAgenda:
     monitorada: bool = False
     agenda_encaixe_id_sgg: str | None = None
     encaixe_padrao: bool = False
+    # Inclui na agenda de encaixe os agendamentos do dia das outras agendas da unidade.
+    incluir_da_unidade: bool = False
 
 
 @dataclass(slots=True)

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.infrastructure.persistence.repositories import (
     SqlAgendaRepository,
     SqlConfiguracaoAgendaRepository,
+    SqlEncaixeAutomaticoRepository,
     SqlLocalRepository,
     SqlLogOperacaoRepository,
     SqlSincronizacaoRepository,
@@ -26,6 +27,7 @@ class SqlAlchemyUnitOfWork:
         self.configuracoes = SqlConfiguracaoAgendaRepository(s)
         self.logs = SqlLogOperacaoRepository(s)
         self.sincronizacoes = SqlSincronizacaoRepository(s)
+        self.encaixes_automaticos = SqlEncaixeAutomaticoRepository(s)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:

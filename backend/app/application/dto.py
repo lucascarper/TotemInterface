@@ -43,6 +43,7 @@ class ConfiguracaoAgendaEntradaDTO:
     monitorada: bool
     agenda_encaixe_id_sgg: str | None
     encaixe_padrao: bool = False
+    incluir_da_unidade: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +56,7 @@ class ConfiguracaoAgendaSaidaDTO:
     monitorada: bool
     agenda_encaixe_id_sgg: str | None
     encaixe_padrao: bool
+    incluir_da_unidade: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,3 +65,22 @@ class ResultadoSincronizacaoDTO:
     locais: int
     executado_em: datetime
     detalhes: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class InclusaoDTO:
+    funcionario_id_sgg: str
+    agenda_origem_nome: str
+    agenda_encaixe_nome: str
+    agendamento_origem_id_sgg: str
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoEncaixeAutomaticoDTO:
+    simulado: bool
+    incluidos: list[InclusaoDTO] = field(default_factory=list)  # criados (ou que seriam)
+    ja_existiam: int = 0
+    sem_cadastro: int = 0
+    recusados: int = 0
+    adiados: int = 0  # ficaram para a próxima execução (limite por execução)
+    avisos: list[str] = field(default_factory=list)

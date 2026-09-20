@@ -2,6 +2,7 @@ from app.domain.ports.clock import Clock
 from app.domain.ports.repositories import (
     AgendaRepository,
     ConfiguracaoAgendaRepository,
+    EncaixeAutomaticoRepository,
     LocalRepository,
     LogOperacaoRepository,
     SincronizacaoRepository,
@@ -13,6 +14,7 @@ __all__ = [
     "Clock",
     "AgendaRepository",
     "ConfiguracaoAgendaRepository",
+    "EncaixeAutomaticoRepository",
     "LocalRepository",
     "LogOperacaoRepository",
     "SincronizacaoRepository",

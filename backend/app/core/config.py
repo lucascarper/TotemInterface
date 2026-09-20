@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     sgg_timeout_seconds: float = 8.0
     sync_interval_seconds: int = 300
 
+    # Inclusão automática no encaixe (só age nas agendas com a opção ligada no painel).
+    encaixe_auto_interval_seconds: int = 300
+    # Limite de escritas por execução: a API do SGG aceita 60 requisições/min.
+    encaixe_auto_max_por_execucao: int = 20
+
     # Admin / auth
     admin_username: str = "admin"
     admin_password: str = "admin123"

@@ -23,6 +23,7 @@ from app.domain.entities import (
     Paciente,
     StatusAgendamento,
 )
+from app.domain.exceptions import SggOperacaoRecusadaError
 from app.infrastructure.clock import TZ
 
 
@@ -110,19 +111,49 @@ class SggFakeGateway:
     def criar_agendamento(
         self, paciente, agenda_id_sgg, data_hora, tipo_atendimento, observacao=None
     ) -> Agendamento:
+        novo_id = self._criar(paciente.id_sgg, paciente.empresa_id_sgg, agenda_id_sgg, data_hora)
+        ag = self._agendamentos[novo_id]
+        ag.tipo_atendimento, ag.observacao = tipo_atendimento, observacao
+        return ag
+
+    def registrar_agendamento(
+        self, funcionario_id_sgg, empresa_id_sgg, agenda_id_sgg, data_hora, observacao
+    ) -> str:
+        novo_id = self._criar(funcionario_id_sgg, empresa_id_sgg, agenda_id_sgg, data_hora)
+        self._agendamentos[novo_id].observacao = observacao
+        return novo_id
+
+    def listar_agendamentos_da_agenda(self, agenda_id_sgg, data) -> list[Agendamento]:
+        return [
+            a
+            for a in self._agendamentos.values()
+            if a.agenda_id_sgg == agenda_id_sgg and a.data_hora.date() == data
+        ]
+
+    def _criar(self, funcionario_id, empresa_id, agenda_id_sgg, data_hora) -> str:
         with self._lock:
+            agenda = next(a for a in self._agendas if a.id_sgg == agenda_id_sgg)
+            if agenda.por_ordem_chegada and any(
+                a.paciente_id_sgg == funcionario_id
+                and a.agenda_id_sgg == agenda_id_sgg
+                and a.data_hora.date() == data_hora.date()
+                for a in self._agendamentos.values()
+            ):
+                # Regra real do SGG: uma por pessoa/dia em agenda por ordem de chegada,
+                # mesmo que a anterior esteja cancelada.
+                raise SggOperacaoRecusadaError(
+                    "D16026", "O Funcionário já possui compromisso agendado nesta agenda."
+                )
             novo_id = f"AG{next(self._seq)}"
-            ag = Agendamento(
+            self._agendamentos[novo_id] = Agendamento(
                 novo_id,
-                paciente.id_sgg,
+                funcionario_id,
                 agenda_id_sgg,
                 data_hora,
                 StatusAgendamento.AGENDADO,
-                tipo_atendimento,
-                observacao,
+                empresa_id_sgg=empresa_id,
             )
-            self._agendamentos[novo_id] = ag
-            return ag
+            return novo_id
 
     # --- utilidades para testes -------------------------------------------
     def adicionar_paciente(self, paciente: Paciente) -> None:

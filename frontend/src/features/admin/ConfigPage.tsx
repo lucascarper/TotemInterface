@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminApi } from "@/api/admin";
 import { ApiError } from "@/api/client";
-import type { ConfiguracaoAgenda, StatusSincronizacao } from "@/api/types";
+import type { ConfiguracaoAgenda, ResultadoEncaixeAutomatico, StatusSincronizacao } from "@/api/types";
 import { IconRefresh } from "@/components/Icons";
 import { dataHora } from "@/lib/format";
 
@@ -17,6 +17,7 @@ export function ConfigPage() {
   const [carregando, setCarregando] = useState(true);
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+  const [simulacao, setSimulacao] = useState<ResultadoEncaixeAutomatico | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -42,6 +43,9 @@ export function ConfigPage() {
   const problemas = monitoradas.filter((i) => !i.agenda_encaixe_id_sgg);
   const temPadrao = monitoradas.some((i) => i.encaixe_padrao && i.agenda_encaixe_id_sgg);
 
+  const podeIncluirDaUnidade = (i: ConfiguracaoAgenda) =>
+    Boolean(itens.find((x) => x.agenda_id_sgg === i.agenda_encaixe_id_sgg)?.por_ordem_chegada);
+
   const atualizar = (id: string, patch: Partial<ConfiguracaoAgenda>) =>
     setItens((prev) =>
       prev.map((i) => {
@@ -51,6 +55,9 @@ export function ConfigPage() {
           novo.agenda_encaixe_id_sgg = null;
           novo.encaixe_padrao = false;
         }
+        // A inclusão automática só vale com encaixe por ordem de chegada.
+        const encaixe = prev.find((x) => x.agenda_id_sgg === novo.agenda_encaixe_id_sgg);
+        if (!novo.monitorada || !encaixe?.por_ordem_chegada) novo.incluir_da_unidade = false;
         return novo;
       }),
     );
@@ -60,15 +67,31 @@ export function ConfigPage() {
     setMsg(null);
     try {
       await adminApi.salvar(
-        itens.map(({ agenda_id_sgg, monitorada, agenda_encaixe_id_sgg, encaixe_padrao }) => ({
-          agenda_id_sgg,
-          monitorada,
-          agenda_encaixe_id_sgg,
-          encaixe_padrao,
-        })),
+        itens.map(
+          ({ agenda_id_sgg, monitorada, agenda_encaixe_id_sgg, encaixe_padrao, incluir_da_unidade }) => ({
+            agenda_id_sgg,
+            monitorada,
+            agenda_encaixe_id_sgg,
+            encaixe_padrao,
+            incluir_da_unidade,
+          }),
+        ),
       );
       setOriginal(JSON.stringify(itens));
       setMsg({ tipo: "ok", texto: "Configuração salva. O totem já usa as novas regras." });
+    } catch (e) {
+      setMsg({ tipo: "erro", texto: tratar(e) });
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  const simular = async () => {
+    setOcupado(true);
+    setMsg(null);
+    setSimulacao(null);
+    try {
+      setSimulacao(await adminApi.simularEncaixeAutomatico());
     } catch (e) {
       setMsg({ tipo: "erro", texto: tratar(e) });
     } finally {
@@ -104,6 +127,14 @@ export function ConfigPage() {
           <button onClick={sincronizar} disabled={ocupado} className="btn-ghost ring-1 ring-surface-line">
             <IconRefresh className={`h-5 w-5 ${ocupado ? "animate-spin" : ""}`} /> Sincronizar com o SGG
           </button>
+          <button
+            onClick={simular}
+            disabled={alterado || ocupado || monitoradas.length === 0}
+            title={alterado ? "Salve as alterações antes de simular" : undefined}
+            className="btn-ghost ring-1 ring-surface-line"
+          >
+            Simular encaixe automático
+          </button>
           <button onClick={salvar} disabled={!alterado || ocupado} className="btn-primary">
             Salvar alterações
           </button>
@@ -131,6 +162,31 @@ export function ConfigPage() {
         </p>
       )}
 
+      {simulacao && (
+        <div className="mt-4 rounded-lg bg-brand-blue-50 px-4 py-3 text-sm text-ink">
+          <p className="font-semibold text-brand-blue">
+            Simulação: {simulacao.incluidos.length} pessoa(s) seriam incluídas agora na agenda de encaixe.
+          </p>
+          <p className="mt-1 text-ink-muted">
+            {simulacao.ja_existiam} já estavam no encaixe · {simulacao.sem_cadastro} sem cadastro para incluir ·
+            considera só agendamentos de hoje com status Agendado nas outras agendas da unidade. Nada foi gravado no SGG.
+          </p>
+          {simulacao.incluidos.length > 0 && (
+            <ul className="mt-2 list-inside list-disc text-ink-muted">
+              {simulacao.incluidos.slice(0, 8).map((i) => (
+                <li key={i.funcionario_id_sgg}>
+                  Funcionário #{i.funcionario_id_sgg}: de {i.agenda_origem_nome} para {i.agenda_encaixe_nome}
+                </li>
+              ))}
+              {simulacao.incluidos.length > 8 && <li>e mais {simulacao.incluidos.length - 8}…</li>}
+            </ul>
+          )}
+          {simulacao.avisos.map((a) => (
+            <p key={a} className="mt-1 font-medium text-warn">{a}</p>
+          ))}
+        </div>
+      )}
+
       <div className="mt-5 overflow-hidden rounded-xl2 bg-white shadow-card ring-1 ring-surface-line">
         <table className="w-full text-sm">
           <thead className="bg-surface-alt text-left text-xs font-semibold uppercase tracking-wider text-ink-soft">
@@ -140,14 +196,17 @@ export function ConfigPage() {
               <th className="px-4 py-3">Local</th>
               <th className="px-4 py-3">Agenda de encaixe</th>
               <th className="px-4 py-3 text-center">Encaixe padrão</th>
+              <th className="px-4 py-3 text-center" title="Inclui no encaixe, automaticamente, quem tem agendamento hoje nas outras agendas da mesma unidade">
+                Incluir da unidade
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-surface-line">
             {carregando && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-muted">Carregando…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Carregando…</td></tr>
             )}
             {!carregando && itens.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-ink-muted">Nenhuma agenda. Clique em “Sincronizar com o SGG”.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Nenhuma agenda. Clique em “Sincronizar com o SGG”.</td></tr>
             )}
             {itens.map((i) => (
               <tr key={i.agenda_id_sgg} className={`${i.monitorada ? "" : "text-ink-muted"} ${i.ativa ? "" : "opacity-50"}`}>
@@ -197,6 +256,21 @@ export function ConfigPage() {
                     checked={i.encaixe_padrao}
                     onChange={() => atualizar(i.agenda_id_sgg, { encaixe_padrao: true })}
                     aria-label={`Definir ${i.agenda_nome} como encaixe padrão`}
+                  />
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    className="h-5 w-5 accent-brand-blue"
+                    disabled={!i.monitorada || !podeIncluirDaUnidade(i)}
+                    checked={i.incluir_da_unidade}
+                    onChange={(e) => atualizar(i.agenda_id_sgg, { incluir_da_unidade: e.target.checked })}
+                    title={
+                      i.monitorada && i.agenda_encaixe_id_sgg && !podeIncluirDaUnidade(i)
+                        ? "Só funciona com agenda de encaixe por ordem de chegada"
+                        : undefined
+                    }
+                    aria-label={`Incluir no encaixe os agendamentos da unidade de ${i.agenda_nome}`}
                   />
                 </td>
               </tr>

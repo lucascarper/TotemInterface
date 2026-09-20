@@ -75,3 +75,40 @@ criação de encaixe (`POST`) e mudança de situação (`PUT`).
 Tabelas: `agendas`, `locais_atendimento`, `configuracoes_agenda`, `logs_operacao`, `sincronizacoes`.
 Migrações com Alembic (`backend/alembic`). Em desenvolvimento, `AUTO_CREATE_SCHEMA=true` cria o schema
 automaticamente em SQLite; em produção use PostgreSQL e `alembic upgrade head` (o Dockerfile já faz isso).
+
+
+## Inclusão automática no encaixe
+
+Tarefa periódica (`ENCAIXE_AUTO_INTERVAL_SECONDS`, 5 min por padrão) que inclui na **agenda de
+encaixe** as pessoas com agendamento nas *outras* agendas da mesma unidade de atendimento, para
+que entrem na fila de chegada e façam check-in no totem. Código em
+`application/use_cases/incluir_no_encaixe.py`.
+
+**Vem desligada.** Ativa-se por agenda monitorada no painel (coluna "Incluir da unidade"), e o
+botão **Simular encaixe automático** mostra o que seria incluído sem gravar nada no SGG.
+
+Regras:
+
+* Só agendamentos **de hoje** com status **Agendado**. Cancelado, faltou, atendido e aguardando não entram.
+* Fontes: agendas ativas da unidade da agenda monitorada que **não** são monitoradas nem de
+  encaixe (as monitoradas já são atendidas direto pelo totem).
+* **Uma inclusão por pessoa, por agenda de encaixe e por dia**, mesmo que a pessoa tenha vários
+  agendamentos nas fontes (vale o mais cedo). Quem já tem agendamento de qualquer status no
+  encaixe hoje é pulado, pois o SGG também recusa (D16026), inclusive para cancelados.
+* Três camadas contra duplicidade: a listagem do encaixe no SGG, o livro-razão local
+  (`encaixes_automaticos`, único por dia/agenda/pessoa) e a própria recusa D16026 do SGG.
+* Só com agenda de encaixe **por ordem de chegada** (o painel bloqueia outras).
+* Limite de escritas por execução (`ENCAIXE_AUTO_MAX_POR_EXECUCAO`); o que sobra fica para o
+  próximo ciclo, respeitando os 60 requisições/min do SGG. Recusas do SGG ficam registradas na
+  Auditoria e não são repetidas no mesmo dia.
+* O check-in do totem passou a consultar também as agendas de encaixe: senão quem foi incluído
+  automaticamente (numa agenda de encaixe não monitorada) ganharia um segundo encaixe recusado pelo SGG.
+
+Particularidades da API do SGG descobertas ao validar com dados reais:
+
+* A paginação repete linhas: a página 0 pode trazer mais que o `tamanho` e a seguinte repete parte
+  delas (217 linhas para 159 agendamentos). O adaptador deduplica por conteúdo.
+* Códigos de erro que começam com "A" nem sempre são de autenticação: só `A000`/`A001` (e `S000`-`S006`)
+  são infraestrutura; `AG016` ("agendamento não encontrado") é de negócio.
+* O filtro `agenda` de `GET /agendamento/` recebe o nome; o adaptador confere o nome exato no retorno.
+* A resposta de sucesso do `POST` traz o código em `id` (não `codigo`, como na documentação).

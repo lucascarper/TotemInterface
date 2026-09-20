@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -16,6 +16,7 @@ from app.domain.entities import (
 from app.infrastructure.persistence.models import (
     AgendaModel,
     ConfiguracaoAgendaModel,
+    EncaixeAutomaticoModel,
     LocalModel,
     LogOperacaoModel,
     SincronizacaoModel,
@@ -113,13 +114,18 @@ class SqlConfiguracaoAgendaRepository:
             m.monitorada = c.monitorada
             m.agenda_encaixe_id_sgg = c.agenda_encaixe_id_sgg
             m.encaixe_padrao = c.encaixe_padrao
+            m.incluir_da_unidade = c.incluir_da_unidade
             self._s.add(m)
         self._s.flush()
 
     @staticmethod
     def _to_entity(m: ConfiguracaoAgendaModel) -> ConfiguracaoAgenda:
         return ConfiguracaoAgenda(
-            m.agenda_id_sgg, m.monitorada, m.agenda_encaixe_id_sgg, m.encaixe_padrao
+            m.agenda_id_sgg,
+            m.monitorada,
+            m.agenda_encaixe_id_sgg,
+            m.encaixe_padrao,
+            m.incluir_da_unidade,
         )
 
 
@@ -188,3 +194,42 @@ class SqlSincronizacaoRepository:
             "sucesso": m.sucesso,
             "mensagem": m.mensagem,
         }
+
+
+class SqlEncaixeAutomaticoRepository:
+    def __init__(self, session: Session) -> None:
+        self._s = session
+
+    def situacoes_do_dia(self, data: date, agenda_encaixe_id_sgg: str) -> dict[str, str]:
+        stmt = select(EncaixeAutomaticoModel).where(
+            EncaixeAutomaticoModel.data == data,
+            EncaixeAutomaticoModel.agenda_encaixe_id_sgg == agenda_encaixe_id_sgg,
+        )
+        return {m.funcionario_id_sgg: m.situacao for m in self._s.scalars(stmt).all()}
+
+    def registrar(
+        self,
+        data: date,
+        agenda_encaixe_id_sgg: str,
+        funcionario_id_sgg: str,
+        situacao: str,
+        agendamento_origem_id_sgg: str | None = None,
+        agendamento_criado_id_sgg: str | None = None,
+        detalhe: str | None = None,
+    ) -> bool:
+        """False se a pessoa já constava nesse dia/agenda (nada é gravado)."""
+        if funcionario_id_sgg in self.situacoes_do_dia(data, agenda_encaixe_id_sgg):
+            return False
+        self._s.add(
+            EncaixeAutomaticoModel(
+                data=data,
+                agenda_encaixe_id_sgg=agenda_encaixe_id_sgg,
+                funcionario_id_sgg=funcionario_id_sgg,
+                situacao=situacao,
+                agendamento_origem_id_sgg=agendamento_origem_id_sgg,
+                agendamento_criado_id_sgg=agendamento_criado_id_sgg,
+                detalhe=detalhe,
+            )
+        )
+        self._s.flush()
+        return True
