@@ -42,15 +42,23 @@ class SalvarConfiguracoesUseCase:
 
     def executar(self, entradas: list[ConfiguracaoAgendaEntradaDTO]) -> None:
         with self._uow as uow:
-            conhecidas = {a.id_sgg for a in uow.agendas.listar(apenas_ativas=False)}
-            self._validar(entradas, conhecidas)
+            todas = uow.agendas.listar(apenas_ativas=False)
+            conhecidas = {a.id_sgg for a in todas}
+            ativas = {a.id_sgg for a in todas if a.ativa}
+            self._validar(entradas, conhecidas, ativas)
             uow.configuracoes.salvar_todas(
                 [
                     ConfiguracaoAgenda(
                         agenda_id_sgg=e.agenda_id_sgg,
-                        monitorada=e.monitorada,
-                        agenda_encaixe_id_sgg=e.agenda_encaixe_id_sgg if e.monitorada else None,
-                        encaixe_padrao=e.encaixe_padrao and e.monitorada,
+                        monitorada=e.monitorada and e.agenda_id_sgg in ativas,
+                        agenda_encaixe_id_sgg=(
+                            e.agenda_encaixe_id_sgg
+                            if e.monitorada and e.agenda_id_sgg in ativas
+                            else None
+                        ),
+                        encaixe_padrao=(
+                            e.encaixe_padrao and e.monitorada and e.agenda_id_sgg in ativas
+                        ),
                     )
                     for e in entradas
                 ]
@@ -58,22 +66,28 @@ class SalvarConfiguracoesUseCase:
             uow.commit()
 
     @staticmethod
-    def _validar(entradas, conhecidas: set[str]) -> None:
+    def _validar(entradas, conhecidas: set[str], ativas: set[str]) -> None:
         ids = [e.agenda_id_sgg for e in entradas]
         if len(ids) != len(set(ids)):
             raise ConfiguracaoInvalidaError("Agenda repetida na configuração.")
         for e in entradas:
             if e.agenda_id_sgg not in conhecidas:
                 raise ConfiguracaoInvalidaError(f"Agenda desconhecida: {e.agenda_id_sgg}")
-            if (
-                e.monitorada
-                and e.agenda_encaixe_id_sgg
-                and e.agenda_encaixe_id_sgg not in conhecidas
-            ):
+            # Agenda inativa/excluída no SGG é sempre salva como desmarcada; só
+            # validamos o encaixe das que continuam valendo.
+            if not (e.monitorada and e.agenda_id_sgg in ativas) or not e.agenda_encaixe_id_sgg:
+                continue
+            if e.agenda_encaixe_id_sgg not in conhecidas:
                 raise ConfiguracaoInvalidaError(
                     f"Agenda de encaixe desconhecida: {e.agenda_encaixe_id_sgg}"
                 )
-        padroes = [e for e in entradas if e.encaixe_padrao and e.monitorada]
+            if e.agenda_encaixe_id_sgg not in ativas:
+                raise ConfiguracaoInvalidaError(
+                    f"Encaixe {e.agenda_encaixe_id_sgg}: agenda inativa ou excluída no SGG."
+                )
+        padroes = [
+            e for e in entradas if e.encaixe_padrao and e.monitorada and e.agenda_id_sgg in ativas
+        ]
         if len(padroes) > 1:
             raise ConfiguracaoInvalidaError("Apenas uma agenda pode ser o encaixe padrão.")
         if padroes and not padroes[0].agenda_encaixe_id_sgg:

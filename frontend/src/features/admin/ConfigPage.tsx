@@ -156,7 +156,7 @@ export function ConfigPage() {
                     type="checkbox"
                     className="h-5 w-5 accent-brand-blue"
                     checked={i.monitorada}
-                    disabled={!i.ativa}
+                    disabled={!i.ativa && !i.monitorada}
                     onChange={(e) => atualizar(i.agenda_id_sgg, { monitorada: e.target.checked })}
                     aria-label={`Monitorar ${i.agenda_nome}`}
                   />
@@ -166,7 +166,11 @@ export function ConfigPage() {
                   <span className={`badge ml-2 ${i.por_ordem_chegada ? "bg-ok-soft text-ok" : "bg-brand-blue-50 text-brand-blue"}`}>
                     {i.por_ordem_chegada ? "ordem de chegada" : "hora marcada"}
                   </span>
-                  {!i.ativa && <span className="badge ml-2 bg-surface-alt text-ink-soft">inativa</span>}
+                  {!i.ativa && (
+                    <span className="badge ml-2 bg-warn-soft text-warn">
+                      {i.monitorada ? "removida/inativa no SGG: desmarque e salve" : "inativa"}
+                    </span>
+                  )}
                   <span className="ml-2 font-mono text-xs text-ink-soft">#{i.agenda_id_sgg}</span>
                 </td>
                 <td className="px-4 py-3">{i.local_nome ?? "—"}</td>

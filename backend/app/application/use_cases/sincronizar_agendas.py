@@ -37,10 +37,30 @@ class SincronizarAgendasUseCase:
             # Garante uma linha de configuração para cada agenda conhecida,
             # preservando o que o administrador já definiu.
             existentes = {c.agenda_id_sgg: c for c in uow.configuracoes.listar()}
-            configuracoes = [
-                existentes.get(a.id_sgg, ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg))
-                for a in agendas
-            ]
+            ativas = {a.id_sgg for a in agendas if a.ativa}
+            no_sgg = {a.id_sgg for a in agendas}
+            configuracoes: list[ConfiguracaoAgenda] = []
+            limpas = 0
+
+            for a in agendas:
+                cfg = existentes.get(a.id_sgg, ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg))
+                if not a.ativa:
+                    # Agenda inativa no SGG nunca é consultada: não deve ficar monitorada.
+                    limpas += self._monitorada(cfg)
+                    cfg = ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg)
+                elif cfg.agenda_encaixe_id_sgg and cfg.agenda_encaixe_id_sgg not in ativas:
+                    # O encaixe apontava para uma agenda excluída ou inativa.
+                    cfg = ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg, monitorada=cfg.monitorada)
+                    limpas += 1
+                configuracoes.append(cfg)
+
+            # Agendas excluídas no SGG não vêm mais na listagem, mas a configuração
+            # antiga continuaria marcada (e o painel não deixava desmarcar).
+            for id_sgg, cfg in existentes.items():
+                if id_sgg not in no_sgg:
+                    limpas += self._monitorada(cfg)
+                    configuracoes.append(ConfiguracaoAgenda(agenda_id_sgg=id_sgg))
+
             uow.configuracoes.salvar_todas(configuracoes)
 
             uow.sincronizacoes.registrar_execucao(
@@ -51,10 +71,18 @@ class SincronizarAgendasUseCase:
                     TipoOperacao.SINCRONIZACAO,
                     True,
                     "Sincronização concluída",
-                    detalhes={"agendas": len(agendas), "locais": len(locais)},
+                    detalhes={
+                        "agendas": len(agendas),
+                        "locais": len(locais),
+                        "configuracoes_limpas": limpas,
+                    },
                 )
             )
             uow.commit()
 
         logger.info("Sincronização: %d agendas, %d locais", len(agendas), len(locais))
         return ResultadoSincronizacaoDTO(len(agendas), len(locais), agora)
+
+    @staticmethod
+    def _monitorada(cfg: ConfiguracaoAgenda) -> int:
+        return 1 if cfg.monitorada or cfg.agenda_encaixe_id_sgg else 0
