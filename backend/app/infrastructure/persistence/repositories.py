@@ -28,6 +28,15 @@ def _agora_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def _tipo_operacao_ou_legado(valor: str) -> TipoOperacao:
+    """Converte para TipoOperacao; cai para LEGADO se o valor gravado no banco não existir
+    mais no enum atual (ex.: logs de uma funcionalidade removida do código)."""
+    try:
+        return TipoOperacao(valor)
+    except ValueError:
+        return TipoOperacao.LEGADO
+
+
 def _aware(dt: datetime | None) -> datetime | None:
     """SQLite devolve datetimes sem fuso; tratamos tudo como UTC (PostgreSQL já vem com fuso)."""
     if dt is None or dt.tzinfo is not None:
@@ -170,7 +179,7 @@ class SqlLogOperacaoRepository:
         stmt = select(LogOperacaoModel).order_by(LogOperacaoModel.id.desc()).limit(limite)
         return [
             LogOperacao(
-                tipo=TipoOperacao(m.tipo),
+                tipo=_tipo_operacao_ou_legado(m.tipo),
                 sucesso=m.sucesso,
                 mensagem=m.mensagem,
                 cpf_mascarado=m.cpf_mascarado,

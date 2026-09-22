@@ -35,6 +35,10 @@ class TipoOperacao(StrEnum):
     CRIACAO_AGENDAMENTO = "CRIACAO_AGENDAMENTO"
     SINCRONIZACAO = "SINCRONIZACAO"
     ERRO = "ERRO"
+    LEGADO = "LEGADO"
+    """Tipo de log gravado por uma funcionalidade já removida do código (ex.: encaixe
+    automático periódico). Mantido só para a auditoria conseguir exibir esses registros
+    antigos sem quebrar; nenhum código novo deve gravar este valor."""
 
 
 class ResultadoCheckin(StrEnum):

@@ -12,6 +12,7 @@ const ROTULOS: Record<string, string> = {
   CRIACAO_AGENDAMENTO: "Criação de encaixe",
   SINCRONIZACAO: "Sincronização",
   ERRO: "Erro",
+  LEGADO: "Funcionalidade removida",
 };
 
 export function LogsPage() {
