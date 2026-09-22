@@ -11,15 +11,15 @@ STATUS_ELEGIVEIS_CHECKIN = {StatusAgendamento.AGENDADO}
 STATUS_JA_EM_FILA = {StatusAgendamento.AGUARDANDO, StatusAgendamento.EM_ATENDIMENTO}
 
 
-def agendas_consultadas(configs) -> list[str]:
-    """Monitoradas + suas agendas de encaixe.
+def agendas_consultadas(configs, guiches) -> list[str]:
+    """Monitoradas + os dois guichês de atendimento.
 
-    Quem foi incluído automaticamente numa agenda de encaixe (que pode não estar
-    monitorada) precisa ser encontrado no check-in: senão o totem tentaria criar um
-    segundo encaixe e o SGG recusaria (D16026).
+    O check-in sempre cria (ou encontra) o registro de chegada num guichê, então
+    os dois precisam entrar na busca: senão um segundo check-in no mesmo dia
+    tentaria criar outro registro lá, e o SGG recusaria (D16026).
     """
     ids = [c.agenda_id_sgg for c in configs]
-    ids += [c.agenda_encaixe_id_sgg for c in configs if c.agenda_encaixe_id_sgg]
+    ids += [g for g in (guiches.guiche_1_agenda_id_sgg, guiches.guiche_2_agenda_id_sgg) if g]
     return list(dict.fromkeys(ids))
 
 

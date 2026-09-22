@@ -23,13 +23,11 @@ def create_app(settings: Settings | None = None, container: Container | None = N
     async def lifespan(app: FastAPI):
         app.state.container = container or build_container(settings)
         if settings.app_env != "test":
-            for agendador in app.state.container.schedulers:
-                await agendador.start()
+            await app.state.container.scheduler.start()
         logger.info("Totem API iniciada (SGG_MODE=%s)", settings.sgg_mode)
         yield
         if settings.app_env != "test":
-            for agendador in app.state.container.schedulers:
-                await agendador.stop()
+            await app.state.container.scheduler.stop()
 
     app = FastAPI(
         title="MultiLife · Totem de Recepção",

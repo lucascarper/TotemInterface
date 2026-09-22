@@ -32,7 +32,9 @@ class IdentificarPacienteUseCase:
             raise PacienteNaoEncontradoError()
 
         with self._uow as uow:
-            monitoradas = agendas_consultadas(uow.configuracoes.listar_monitoradas())
+            configs = uow.configuracoes.listar_monitoradas()
+            guiches = uow.guiches.obter()
+            monitoradas = agendas_consultadas(configs, guiches)
             agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
         agendamento = localizar_agendamento_do_dia(

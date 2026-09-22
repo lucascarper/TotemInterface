@@ -1,33 +1,23 @@
-"""Tarefas periódicas em segundo plano, sem dependências externas."""
+"""Sincronização periódica em segundo plano (RF01), sem dependências externas."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+
+from app.application.use_cases import SincronizarAgendasUseCase
 
 logger = logging.getLogger(__name__)
 
 
-class PeriodicScheduler:
-    """Executa `tarefa` (síncrona) a cada `intervalo_segundos`, numa thread."""
-
-    def __init__(
-        self,
-        nome: str,
-        tarefa: Callable[[], object],
-        intervalo_segundos: int,
-        atraso_inicial_segundos: float = 0,
-        intervalo_minimo: int = 15,
-    ) -> None:
-        self._nome = nome
-        self._tarefa = tarefa
-        self._intervalo = max(intervalo_minimo, intervalo_segundos)
-        self._atraso = atraso_inicial_segundos
+class SyncScheduler:
+    def __init__(self, use_case: SincronizarAgendasUseCase, intervalo_segundos: int) -> None:
+        self._uc = use_case
+        self._intervalo = max(15, intervalo_segundos)
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
-        self._task = asyncio.create_task(self._loop(), name=self._nome)
+        self._task = asyncio.create_task(self._loop(), name="sgg-sync")
 
     async def stop(self) -> None:
         if self._task:
@@ -38,11 +28,9 @@ class PeriodicScheduler:
                 pass
 
     async def _loop(self) -> None:
-        if self._atraso:
-            await asyncio.sleep(self._atraso)
         while True:
             try:
-                await asyncio.to_thread(self._tarefa)
+                await asyncio.to_thread(self._uc.executar)
             except Exception as exc:  # noqa: BLE001 — nunca derrubar o loop
-                logger.warning("Tarefa '%s' falhou: %s", self._nome, exc)
+                logger.warning("Sincronização falhou: %s", exc)
             await asyncio.sleep(self._intervalo)

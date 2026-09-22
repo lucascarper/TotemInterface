@@ -33,14 +33,15 @@ class TipoOperacao(StrEnum):
     BUSCA_AGENDAMENTO = "BUSCA_AGENDAMENTO"
     ATUALIZACAO_STATUS = "ATUALIZACAO_STATUS"
     CRIACAO_AGENDAMENTO = "CRIACAO_AGENDAMENTO"
-    ENCAIXE_AUTOMATICO = "ENCAIXE_AUTOMATICO"
     SINCRONIZACAO = "SINCRONIZACAO"
     ERRO = "ERRO"
 
 
 class ResultadoCheckin(StrEnum):
-    STATUS_ATUALIZADO = "STATUS_ATUALIZADO"
-    ENCAIXE_CRIADO = "ENCAIXE_CRIADO"
+    """Resultado do check-in: sempre cria um registro na fila; isto só distingue a mensagem."""
+
+    AGENDAMENTO_CONFIRMADO = "AGENDAMENTO_CONFIRMADO"  # havia agendamento hoje na origem
+    ENCAIXE_CRIADO = "ENCAIXE_CRIADO"  # sem agendamento: entrou como encaixe
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +132,6 @@ class Agendamento:
     status: StatusAgendamento
     tipo_atendimento: TipoAtendimento | None = None
     observacao: str | None = None
-    empresa_id_sgg: str | None = None
 
 
 @dataclass(slots=True)
@@ -140,10 +140,22 @@ class ConfiguracaoAgenda:
 
     agenda_id_sgg: str
     monitorada: bool = False
-    agenda_encaixe_id_sgg: str | None = None
-    encaixe_padrao: bool = False
-    # Inclui na agenda de encaixe os agendamentos do dia das outras agendas da unidade.
-    incluir_da_unidade: bool = False
+
+
+@dataclass(slots=True)
+class ConfiguracaoGuiches:
+    """Os dois guichês de atendimento: destino único e compartilhado por todo check-in.
+
+    Diferente da configuração por agenda monitorada, isto é global — não importa em
+    qual agenda o paciente estava agendado, o registro de chegada sempre nasce em um
+    destes dois guichês (agendas por ordem de chegada no SGG).
+    """
+
+    guiche_1_agenda_id_sgg: str | None = None
+    guiche_2_agenda_id_sgg: str | None = None
+    # Último guichê escolhido para um atendimento Normal, para alternar em caso de
+    # empate na carga dos dois guichês (1 ou 2). Preferencial não altera isto.
+    ultimo_guiche_usado: int | None = None
 
 
 @dataclass(slots=True)

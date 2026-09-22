@@ -5,7 +5,7 @@ válidos (dígitos verificadores corretos) e podem ser usados no totem em dev:
 
   529.982.247-25  Maria Aparecida da Silva  → tem agendamento hoje (AGENDADO)
   111.444.777-35  João Pedro Santos         → sem agendamento hoje (vai para encaixe)
-  123.456.789-09  Ana Beatriz Oliveira      → agendamento hoje já AGUARDANDO
+  123.456.789-09  Ana Beatriz Oliveira      → já fez check-in hoje (AGUARDANDO)
   Qualquer outro CPF válido                 → paciente não cadastrado
 """
 
@@ -39,8 +39,9 @@ class SggFakeGateway:
             Agenda("A1", "Clínico Geral - Dr. Roberto", "L1", duracao_padrao_minutos=15),
             Agenda("A2", "Medicina do Trabalho - Dra. Carla", "L1", duracao_padrao_minutos=15),
             Agenda("A3", "Exames Ocupacionais", "L1", duracao_padrao_minutos=5),
-            Agenda("A4", "Encaixe Recepção", "L1", por_ordem_chegada=True),
+            Agenda("A4", "Recepção", "L1", por_ordem_chegada=True),
             Agenda("A5", "Psicologia - Zona Norte", "L2", duracao_padrao_minutos=30),
+            Agenda("A6", "Guichê 2", "L1", por_ordem_chegada=True),
         ]
         self._pacientes = {
             "52998224725": Paciente(
@@ -101,6 +102,13 @@ class SggFakeGateway:
             and a.data_hora.date() == data
         ]
 
+    def listar_agendamentos_da_agenda(self, agenda_id_sgg, data) -> list[Agendamento]:
+        return [
+            a
+            for a in self._agendamentos.values()
+            if a.agenda_id_sgg == agenda_id_sgg and a.data_hora.date() == data
+        ]
+
     # --- escrita -----------------------------------------------------------
     def atualizar_status_agendamento(self, agendamento_id_sgg, status) -> Agendamento:
         with self._lock:
@@ -111,26 +119,12 @@ class SggFakeGateway:
     def criar_agendamento(
         self, paciente, agenda_id_sgg, data_hora, tipo_atendimento, observacao=None
     ) -> Agendamento:
-        novo_id = self._criar(paciente.id_sgg, paciente.empresa_id_sgg, agenda_id_sgg, data_hora)
+        novo_id = self._criar(paciente.id_sgg, agenda_id_sgg, data_hora)
         ag = self._agendamentos[novo_id]
         ag.tipo_atendimento, ag.observacao = tipo_atendimento, observacao
         return ag
 
-    def registrar_agendamento(
-        self, funcionario_id_sgg, empresa_id_sgg, agenda_id_sgg, data_hora, observacao
-    ) -> str:
-        novo_id = self._criar(funcionario_id_sgg, empresa_id_sgg, agenda_id_sgg, data_hora)
-        self._agendamentos[novo_id].observacao = observacao
-        return novo_id
-
-    def listar_agendamentos_da_agenda(self, agenda_id_sgg, data) -> list[Agendamento]:
-        return [
-            a
-            for a in self._agendamentos.values()
-            if a.agenda_id_sgg == agenda_id_sgg and a.data_hora.date() == data
-        ]
-
-    def _criar(self, funcionario_id, empresa_id, agenda_id_sgg, data_hora) -> str:
+    def _criar(self, funcionario_id, agenda_id_sgg, data_hora) -> str:
         with self._lock:
             agenda = next(a for a in self._agendas if a.id_sgg == agenda_id_sgg)
             if agenda.por_ordem_chegada and any(
@@ -146,12 +140,7 @@ class SggFakeGateway:
                 )
             novo_id = f"AG{next(self._seq)}"
             self._agendamentos[novo_id] = Agendamento(
-                novo_id,
-                funcionario_id,
-                agenda_id_sgg,
-                data_hora,
-                StatusAgendamento.AGENDADO,
-                empresa_id_sgg=empresa_id,
+                novo_id, funcionario_id, agenda_id_sgg, data_hora, StatusAgendamento.AGENDADO
             )
             return novo_id
 

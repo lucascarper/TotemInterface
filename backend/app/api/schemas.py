@@ -67,21 +67,27 @@ class ConfiguracaoAgendaItem(BaseModel):
     ativa: bool
     por_ordem_chegada: bool
     monitorada: bool
-    agenda_encaixe_id_sgg: str | None
-    encaixe_padrao: bool
-    incluir_da_unidade: bool
 
 
 class ConfiguracaoAgendaEntrada(BaseModel):
     agenda_id_sgg: str
     monitorada: bool = False
-    agenda_encaixe_id_sgg: str | None = None
-    encaixe_padrao: bool = False
-    incluir_da_unidade: bool = False
 
 
 class SalvarConfiguracoesRequest(BaseModel):
     configuracoes: list[ConfiguracaoAgendaEntrada]
+
+
+class GuichesResponse(BaseModel):
+    guiche_1_agenda_id_sgg: str | None
+    guiche_1_agenda_nome: str | None
+    guiche_2_agenda_id_sgg: str | None
+    guiche_2_agenda_nome: str | None
+
+
+class SalvarGuichesRequest(BaseModel):
+    guiche_1_agenda_id_sgg: str | None = None
+    guiche_2_agenda_id_sgg: str | None = None
 
 
 class SincronizacaoResponse(BaseModel):
@@ -110,20 +116,3 @@ class LogItem(BaseModel):
     agenda_id_sgg: str | None
     tipo_atendimento: TipoAtendimento | None
     detalhes: dict
-
-
-class InclusaoItem(BaseModel):
-    funcionario_id_sgg: str
-    agenda_origem_nome: str
-    agenda_encaixe_nome: str
-    agendamento_origem_id_sgg: str
-
-
-class EncaixeAutomaticoResponse(BaseModel):
-    simulado: bool
-    incluidos: list[InclusaoItem]
-    ja_existiam: int
-    sem_cadastro: int
-    recusados: int
-    adiados: int
-    avisos: list[str]

@@ -6,11 +6,12 @@ from dataclasses import dataclass
 
 from app.application.use_cases import (
     IdentificarPacienteUseCase,
-    IncluirNoEncaixeUseCase,
     ListarConfiguracoesUseCase,
     ListarLogsUseCase,
+    ObterGuichesUseCase,
     RealizarCheckinUseCase,
     SalvarConfiguracoesUseCase,
+    SalvarGuichesUseCase,
     SincronizarAgendasUseCase,
 )
 from app.core.config import Settings
@@ -20,7 +21,7 @@ from app.domain.ports import Clock, SggGateway
 from app.infrastructure.clock import SystemClock
 from app.infrastructure.persistence.models import Base
 from app.infrastructure.persistence.unit_of_work import SqlAlchemyUnitOfWork
-from app.infrastructure.scheduler import PeriodicScheduler
+from app.infrastructure.scheduler import SyncScheduler
 from app.infrastructure.sgg import build_sgg_gateway
 
 
@@ -31,7 +32,7 @@ class Container:
     clock: Clock
     auth: AuthService
     session_factory: object
-    schedulers: list[PeriodicScheduler]
+    scheduler: SyncScheduler
 
     @property
     def uow(self) -> SqlAlchemyUnitOfWork:
@@ -47,19 +48,17 @@ class Container:
     def sincronizar(self) -> SincronizarAgendasUseCase:
         return SincronizarAgendasUseCase(self.sgg, self.uow, self.clock)
 
-    def incluir_no_encaixe(self) -> IncluirNoEncaixeUseCase:
-        return IncluirNoEncaixeUseCase(
-            self.sgg,
-            self.uow,
-            self.clock,
-            max_por_execucao=self.settings.encaixe_auto_max_por_execucao,
-        )
-
     def listar_configuracoes(self) -> ListarConfiguracoesUseCase:
         return ListarConfiguracoesUseCase(self.uow)
 
     def salvar_configuracoes(self) -> SalvarConfiguracoesUseCase:
         return SalvarConfiguracoesUseCase(self.uow)
+
+    def obter_guiches(self) -> ObterGuichesUseCase:
+        return ObterGuichesUseCase(self.uow)
+
+    def salvar_guiches(self) -> SalvarGuichesUseCase:
+        return SalvarGuichesUseCase(self.uow)
 
     def listar_logs(self) -> ListarLogsUseCase:
         return ListarLogsUseCase(self.uow)
@@ -78,26 +77,14 @@ def build_container(
     sgg = sgg or build_sgg_gateway(settings)
     clock = clock or SystemClock()
     uow = SqlAlchemyUnitOfWork(factory)
-    sincronizar = SincronizarAgendasUseCase(sgg, uow, clock)
-    encaixe_auto = IncluirNoEncaixeUseCase(
-        sgg, uow, clock, max_por_execucao=settings.encaixe_auto_max_por_execucao
+    scheduler = SyncScheduler(
+        SincronizarAgendasUseCase(sgg, uow, clock), settings.sync_interval_seconds
     )
-    schedulers = [
-        PeriodicScheduler("sgg-sync", sincronizar.executar, settings.sync_interval_seconds),
-        # Começa depois da primeira sincronização, que popula as agendas locais.
-        PeriodicScheduler(
-            "encaixe-automatico",
-            encaixe_auto.executar,
-            settings.encaixe_auto_interval_seconds,
-            atraso_inicial_segundos=45,
-            intervalo_minimo=60,
-        ),
-    ]
     return Container(
         settings=settings,
         sgg=sgg,
         clock=clock,
         auth=AuthService(settings),
         session_factory=factory,
-        schedulers=schedulers,
+        scheduler=scheduler,
     )

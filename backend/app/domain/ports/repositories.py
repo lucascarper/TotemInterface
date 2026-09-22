@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
 from typing import Protocol
 
-from app.domain.entities import Agenda, ConfiguracaoAgenda, LocalAtendimento, LogOperacao
+from app.domain.entities import (
+    Agenda,
+    ConfiguracaoAgenda,
+    ConfiguracaoGuiches,
+    LocalAtendimento,
+    LogOperacao,
+)
 
 
 class AgendaRepository(Protocol):
@@ -25,6 +30,13 @@ class ConfiguracaoAgendaRepository(Protocol):
     def salvar_todas(self, configuracoes: list[ConfiguracaoAgenda]) -> None: ...
 
 
+class ConfiguracaoGuichesRepository(Protocol):
+    """Linha única (singleton): os dois guichês de atendimento."""
+
+    def obter(self) -> ConfiguracaoGuiches: ...
+    def salvar(self, configuracao: ConfiguracaoGuiches) -> None: ...
+
+
 class LogOperacaoRepository(Protocol):
     def registrar(self, log: LogOperacao) -> LogOperacao: ...
     def listar_recentes(self, limite: int = 100) -> list[LogOperacao]: ...
@@ -35,32 +47,15 @@ class SincronizacaoRepository(Protocol):
     def ultima_execucao(self) -> dict | None: ...
 
 
-class EncaixeAutomaticoRepository(Protocol):
-    """Livro-razão das inclusões automáticas: garante uma por pessoa/agenda/dia."""
-
-    def situacoes_do_dia(self, data: date, agenda_encaixe_id_sgg: str) -> dict[str, str]: ...
-
-    def registrar(
-        self,
-        data: date,
-        agenda_encaixe_id_sgg: str,
-        funcionario_id_sgg: str,
-        situacao: str,
-        agendamento_origem_id_sgg: str | None = None,
-        agendamento_criado_id_sgg: str | None = None,
-        detalhe: str | None = None,
-    ) -> bool: ...
-
-
 class UnitOfWork(Protocol):
     """Agrupa repositórios em uma transação."""
 
     agendas: AgendaRepository
     locais: LocalRepository
     configuracoes: ConfiguracaoAgendaRepository
+    guiches: ConfiguracaoGuichesRepository
     logs: LogOperacaoRepository
     sincronizacoes: SincronizacaoRepository
-    encaixes_automaticos: EncaixeAutomaticoRepository
 
     def __enter__(self) -> UnitOfWork: ...
     def __exit__(self, *args) -> None: ...

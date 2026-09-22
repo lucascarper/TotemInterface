@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from app.application.dto import ResultadoSincronizacaoDTO
-from app.domain.entities import ConfiguracaoAgenda, LogOperacao, TipoOperacao
+from app.domain.entities import ConfiguracaoAgenda, ConfiguracaoGuiches, LogOperacao, TipoOperacao
 from app.domain.exceptions import SggIndisponivelError
 from app.domain.ports import Clock, SggGateway, UnitOfWork
 
@@ -34,34 +34,38 @@ class SincronizarAgendasUseCase:
             uow.agendas.substituir_todas(agendas)
             uow.locais.substituir_todos(locais)
 
-            # Garante uma linha de configuração para cada agenda conhecida,
-            # preservando o que o administrador já definiu.
-            existentes = {c.agenda_id_sgg: c for c in uow.configuracoes.listar()}
             ativas = {a.id_sgg for a in agendas if a.ativa}
             no_sgg = {a.id_sgg for a in agendas}
-            configuracoes: list[ConfiguracaoAgenda] = []
             limpas = 0
 
+            # Agenda inativa ou excluída no SGG nunca é consultada: não deve ficar monitorada.
+            existentes = {c.agenda_id_sgg: c for c in uow.configuracoes.listar()}
+            configuracoes: list[ConfiguracaoAgenda] = []
             for a in agendas:
                 cfg = existentes.get(a.id_sgg, ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg))
-                if not a.ativa:
-                    # Agenda inativa no SGG nunca é consultada: não deve ficar monitorada.
-                    limpas += self._monitorada(cfg)
-                    cfg = ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg)
-                elif cfg.agenda_encaixe_id_sgg and cfg.agenda_encaixe_id_sgg not in ativas:
-                    # O encaixe apontava para uma agenda excluída ou inativa.
-                    cfg = ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg, monitorada=cfg.monitorada)
+                if not a.ativa and cfg.monitorada:
                     limpas += 1
+                    cfg = ConfiguracaoAgenda(agenda_id_sgg=a.id_sgg)
                 configuracoes.append(cfg)
-
-            # Agendas excluídas no SGG não vêm mais na listagem, mas a configuração
-            # antiga continuaria marcada (e o painel não deixava desmarcar).
             for id_sgg, cfg in existentes.items():
                 if id_sgg not in no_sgg:
-                    limpas += self._monitorada(cfg)
+                    if cfg.monitorada:
+                        limpas += 1
                     configuracoes.append(ConfiguracaoAgenda(agenda_id_sgg=id_sgg))
-
             uow.configuracoes.salvar_todas(configuracoes)
+
+            # Guichê apontando para uma agenda excluída ou inativa: some sozinho, para o
+            # check-in não continuar tentando escrever numa agenda que já não existe mais.
+            guiches = uow.guiches.obter()
+            g1 = guiches.guiche_1_agenda_id_sgg
+            g2 = guiches.guiche_2_agenda_id_sgg
+            novo_g1 = g1 if g1 in ativas else None
+            novo_g2 = g2 if g2 in ativas else None
+            if novo_g1 != g1 or novo_g2 != g2:
+                limpas += 1
+                uow.guiches.salvar(
+                    ConfiguracaoGuiches(novo_g1, novo_g2, guiches.ultimo_guiche_usado)
+                )
 
             uow.sincronizacoes.registrar_execucao(
                 True, f"{len(agendas)} agendas, {len(locais)} locais"
@@ -82,7 +86,3 @@ class SincronizarAgendasUseCase:
 
         logger.info("Sincronização: %d agendas, %d locais", len(agendas), len(locais))
         return ResultadoSincronizacaoDTO(len(agendas), len(locais), agora)
-
-    @staticmethod
-    def _monitorada(cfg: ConfiguracaoAgenda) -> int:
-        return 1 if cfg.monitorada or cfg.agenda_encaixe_id_sgg else 0

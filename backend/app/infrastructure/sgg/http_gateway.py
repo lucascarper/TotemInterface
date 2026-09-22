@@ -229,30 +229,13 @@ class SggHttpGateway:
     ) -> Agendamento:
         if not paciente.empresa_id_sgg:
             raise SggOperacaoRecusadaError("EMPRESA", "Funcionário sem empresa vinculada no SGG.")
-        novo_id = self.registrar_agendamento(
-            paciente.id_sgg,
-            paciente.empresa_id_sgg,
-            agenda_id_sgg,
-            data_hora,
-            observacao or f"Totem ({tipo_atendimento.value.lower()})",
-        )
-        return self._obter_agendamento(novo_id)
-
-    def registrar_agendamento(
-        self,
-        funcionario_id_sgg: str,
-        empresa_id_sgg: str,
-        agenda_id_sgg: str,
-        data_hora: datetime,
-        observacao: str,
-    ) -> str:
         agenda = self._agenda_pelo_id(agenda_id_sgg)
         body: dict = {
-            "id_empresa": empresa_id_sgg,
-            "id_funcionario": funcionario_id_sgg,
+            "id_empresa": paciente.empresa_id_sgg,
+            "id_funcionario": paciente.id_sgg,
             "agenda": agenda.nome,
             "data_agendamento": data_hora.date().isoformat(),
-            "observacoes": observacao,
+            "observacoes": observacao or f"Totem ({tipo_atendimento.value.lower()})",
         }
         if not agenda.por_ordem_chegada:
             # Agenda por hora marcada exige horário alinhado à grade da agenda.
@@ -265,7 +248,7 @@ class SggHttpGateway:
             raise SggOperacaoRecusadaError(
                 "POST", f"SGG não devolveu o código do agendamento (retorno: {info})"
             )
-        return novo_id
+        return self._obter_agendamento(novo_id)
 
     def listar_agendamentos_da_agenda(self, agenda_id_sgg: str, data: date) -> list[Agendamento]:
         agenda = self._agenda_pelo_id(agenda_id_sgg)
@@ -277,7 +260,7 @@ class SggHttpGateway:
                 "data_hora_agendamento_ate": f"{data.isoformat()} 23:59:59",
             },
         )
-        # O filtro por nome pode ser aproximado ("TESTE TI" x "TESTE TI 2"): confirma o nome exato.
+        # O filtro por nome pode ser aproximado ("Guichê 1" x "Guichê 12"): confirma o nome exato.
         return [
             mappers.to_agendamento(i, agenda.id_sgg)
             for i in itens

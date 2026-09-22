@@ -31,6 +31,11 @@ class SggGateway(Protocol):
         self, paciente_id_sgg: str, agenda_ids_sgg: list[str], data: date
     ) -> list[Agendamento]: ...
 
+    def listar_agendamentos_da_agenda(self, agenda_id_sgg: str, data: date) -> list[Agendamento]:
+        """Todos os agendamentos do dia de uma agenda (qualquer pessoa) — usado para medir
+        a carga de cada guichê (quantos estão Aguardando agora) ao distribuir check-ins."""
+        ...
+
     def atualizar_status_agendamento(
         self, agendamento_id_sgg: str, status: StatusAgendamento
     ) -> Agendamento: ...
@@ -43,18 +48,3 @@ class SggGateway(Protocol):
         tipo_atendimento: TipoAtendimento,
         observacao: str | None = None,
     ) -> Agendamento: ...
-
-    def listar_agendamentos_da_agenda(self, agenda_id_sgg: str, data: date) -> list[Agendamento]:
-        """Todos os agendamentos do dia de uma agenda (qualquer status e pessoa)."""
-        ...
-
-    def registrar_agendamento(
-        self,
-        funcionario_id_sgg: str,
-        empresa_id_sgg: str,
-        agenda_id_sgg: str,
-        data_hora: datetime,
-        observacao: str,
-    ) -> str:
-        """Cria um agendamento sem reconsultá-lo (uso em lote). Devolve o id criado."""
-        ...

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/api/admin";
 import { ApiError } from "@/api/client";
 import type { LogItem } from "@/api/types";
-import { IconRefresh } from "@/components/Icons";
+import { IconRefresh, IconStar } from "@/components/Icons";
 import { dataHora } from "@/lib/format";
 
 const ROTULOS: Record<string, string> = {
@@ -10,7 +10,6 @@ const ROTULOS: Record<string, string> = {
   BUSCA_AGENDAMENTO: "Busca de agendamento",
   ATUALIZACAO_STATUS: "Atualização de status",
   CRIACAO_AGENDAMENTO: "Criação de encaixe",
-  ENCAIXE_AUTOMATICO: "Encaixe automático",
   SINCRONIZACAO: "Sincronização",
   ERRO: "Erro",
 };
@@ -79,21 +78,38 @@ export function LogsPage() {
             {visiveis.length === 0 && (
               <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-muted">{carregando ? "Carregando…" : "Nenhum registro."}</td></tr>
             )}
-            {visiveis.map((l) => (
-              <tr key={l.id}>
-                <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink-muted">{dataHora(l.criado_em)}</td>
-                <td className="px-4 py-2.5 font-semibold">{ROTULOS[l.tipo] ?? l.tipo}</td>
-                <td className="px-4 py-2.5">
-                  <span className={`badge ${l.sucesso ? "bg-ok-soft text-ok" : "bg-brand-red-50 text-brand-red"}`}>{l.sucesso ? "OK" : "Falha"}</span>
-                  <span className="ml-2 text-ink-muted">{l.mensagem}</span>
-                </td>
-                <td className="px-4 py-2.5 font-mono text-xs">{l.cpf_mascarado ?? "—"}</td>
-                <td className="px-4 py-2.5">{l.tipo_atendimento ? (l.tipo_atendimento === "PREFERENCIAL" ? "Preferencial" : "Normal") : "—"}</td>
-                <td className="px-4 py-2.5 font-mono text-xs text-ink-muted">
-                  {l.agenda_id_sgg ?? "—"} {l.agendamento_id_sgg ? `· ${l.agendamento_id_sgg}` : ""}
-                </td>
-              </tr>
-            ))}
+            {visiveis.map((l) => {
+              const preferencial = l.tipo_atendimento === "PREFERENCIAL";
+              return (
+                <tr key={l.id} className={preferencial ? "bg-brand-red-50/40" : undefined}>
+                  <td
+                    className={`whitespace-nowrap px-4 py-2.5 font-mono text-xs text-ink-muted ${preferencial ? "border-l-4 border-brand-red" : ""}`}
+                  >
+                    {dataHora(l.criado_em)}
+                  </td>
+                  <td className="px-4 py-2.5 font-semibold">{ROTULOS[l.tipo] ?? l.tipo}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`badge ${l.sucesso ? "bg-ok-soft text-ok" : "bg-brand-red-50 text-brand-red"}`}>{l.sucesso ? "OK" : "Falha"}</span>
+                    <span className="ml-2 text-ink-muted">{l.mensagem}</span>
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs">{l.cpf_mascarado ?? "—"}</td>
+                  <td className="px-4 py-2.5">
+                    {!l.tipo_atendimento ? (
+                      "—"
+                    ) : preferencial ? (
+                      <span className="badge gap-1 bg-brand-red text-white">
+                        <IconStar className="h-3 w-3" /> Preferencial
+                      </span>
+                    ) : (
+                      "Normal"
+                    )}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-ink-muted">
+                    {l.agenda_id_sgg ?? "—"} {l.agendamento_id_sgg ? `· ${l.agendamento_id_sgg}` : ""}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

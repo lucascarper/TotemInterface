@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminApi } from "@/api/admin";
 import { ApiError } from "@/api/client";
-import type { ConfiguracaoAgenda, ResultadoEncaixeAutomatico, StatusSincronizacao } from "@/api/types";
+import type { ConfiguracaoAgenda, Guiches, StatusSincronizacao } from "@/api/types";
 import { IconRefresh } from "@/components/Icons";
 import { dataHora } from "@/lib/format";
 
@@ -17,7 +17,6 @@ export function ConfigPage() {
   const [carregando, setCarregando] = useState(true);
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
-  const [simulacao, setSimulacao] = useState<ResultadoEncaixeAutomatico | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -39,59 +38,19 @@ export function ConfigPage() {
 
   const alterado = JSON.stringify(itens) !== original;
   const monitoradas = itens.filter((i) => i.monitorada);
-  const opcoesEncaixe = useMemo(() => itens.filter((i) => i.ativa), [itens]);
-  const problemas = monitoradas.filter((i) => !i.agenda_encaixe_id_sgg);
-  const temPadrao = monitoradas.some((i) => i.encaixe_padrao && i.agenda_encaixe_id_sgg);
-
-  const podeIncluirDaUnidade = (i: ConfiguracaoAgenda) =>
-    Boolean(itens.find((x) => x.agenda_id_sgg === i.agenda_encaixe_id_sgg)?.por_ordem_chegada);
 
   const atualizar = (id: string, patch: Partial<ConfiguracaoAgenda>) =>
-    setItens((prev) =>
-      prev.map((i) => {
-        if (i.agenda_id_sgg !== id) return patch.encaixe_padrao ? { ...i, encaixe_padrao: false } : i;
-        const novo = { ...i, ...patch };
-        if (!novo.monitorada) {
-          novo.agenda_encaixe_id_sgg = null;
-          novo.encaixe_padrao = false;
-        }
-        // A inclusão automática só vale com encaixe por ordem de chegada.
-        const encaixe = prev.find((x) => x.agenda_id_sgg === novo.agenda_encaixe_id_sgg);
-        if (!novo.monitorada || !encaixe?.por_ordem_chegada) novo.incluir_da_unidade = false;
-        return novo;
-      }),
-    );
+    setItens((prev) => prev.map((i) => (i.agenda_id_sgg === id ? { ...i, ...patch } : i)));
 
   const salvar = async () => {
     setOcupado(true);
     setMsg(null);
     try {
       await adminApi.salvar(
-        itens.map(
-          ({ agenda_id_sgg, monitorada, agenda_encaixe_id_sgg, encaixe_padrao, incluir_da_unidade }) => ({
-            agenda_id_sgg,
-            monitorada,
-            agenda_encaixe_id_sgg,
-            encaixe_padrao,
-            incluir_da_unidade,
-          }),
-        ),
+        itens.map(({ agenda_id_sgg, monitorada }) => ({ agenda_id_sgg, monitorada })),
       );
       setOriginal(JSON.stringify(itens));
       setMsg({ tipo: "ok", texto: "Configuração salva. O totem já usa as novas regras." });
-    } catch (e) {
-      setMsg({ tipo: "erro", texto: tratar(e) });
-    } finally {
-      setOcupado(false);
-    }
-  };
-
-  const simular = async () => {
-    setOcupado(true);
-    setMsg(null);
-    setSimulacao(null);
-    try {
-      setSimulacao(await adminApi.simularEncaixeAutomatico());
     } catch (e) {
       setMsg({ tipo: "erro", texto: tratar(e) });
     } finally {
@@ -115,25 +74,18 @@ export function ConfigPage() {
 
   return (
     <div className="animate-rise">
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <GuichesCard itens={itens} />
+
+      <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Agendas do totem</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Marque quais agendas do SGG o totem consulta e, para cada uma, a agenda de encaixe usada quando o paciente não tem horário.
-            Prefira agendas por <strong>ordem de chegada</strong> como encaixe: em agendas por hora marcada o totem precisa escolher um horário livre na grade.
+            Marque quais agendas do SGG o totem consulta para encontrar o agendamento do paciente.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={sincronizar} disabled={ocupado} className="btn-ghost ring-1 ring-surface-line">
             <IconRefresh className={`h-5 w-5 ${ocupado ? "animate-spin" : ""}`} /> Sincronizar com o SGG
-          </button>
-          <button
-            onClick={simular}
-            disabled={alterado || ocupado || monitoradas.length === 0}
-            title={alterado ? "Salve as alterações antes de simular" : undefined}
-            className="btn-ghost ring-1 ring-surface-line"
-          >
-            Simular encaixe automático
           </button>
           <button onClick={salvar} disabled={!alterado || ocupado} className="btn-primary">
             Salvar alterações
@@ -151,41 +103,6 @@ export function ConfigPage() {
       {msg && (
         <p className={`mt-4 rounded-lg px-4 py-3 text-sm font-medium ${msg.tipo === "ok" ? "bg-ok-soft text-ok" : "bg-brand-red-50 text-brand-red"}`}>{msg.texto}</p>
       )}
-      {!carregando && monitoradas.length > 0 && problemas.length > 0 && (
-        <p className="mt-4 rounded-lg bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
-          {problemas.length} agenda(s) monitorada(s) sem agenda de encaixe. Pacientes sem horário usarão o encaixe padrão.
-        </p>
-      )}
-      {!carregando && monitoradas.length > 0 && !temPadrao && (
-        <p className="mt-2 rounded-lg bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
-          Nenhum encaixe padrão definido. Será usada a primeira agenda monitorada com encaixe configurado.
-        </p>
-      )}
-
-      {simulacao && (
-        <div className="mt-4 rounded-lg bg-brand-blue-50 px-4 py-3 text-sm text-ink">
-          <p className="font-semibold text-brand-blue">
-            Simulação: {simulacao.incluidos.length} pessoa(s) seriam incluídas agora na agenda de encaixe.
-          </p>
-          <p className="mt-1 text-ink-muted">
-            {simulacao.ja_existiam} já estavam no encaixe · {simulacao.sem_cadastro} sem cadastro para incluir ·
-            considera só agendamentos de hoje com status Agendado nas outras agendas da unidade. Nada foi gravado no SGG.
-          </p>
-          {simulacao.incluidos.length > 0 && (
-            <ul className="mt-2 list-inside list-disc text-ink-muted">
-              {simulacao.incluidos.slice(0, 8).map((i) => (
-                <li key={i.funcionario_id_sgg}>
-                  Funcionário #{i.funcionario_id_sgg}: de {i.agenda_origem_nome} para {i.agenda_encaixe_nome}
-                </li>
-              ))}
-              {simulacao.incluidos.length > 8 && <li>e mais {simulacao.incluidos.length - 8}…</li>}
-            </ul>
-          )}
-          {simulacao.avisos.map((a) => (
-            <p key={a} className="mt-1 font-medium text-warn">{a}</p>
-          ))}
-        </div>
-      )}
 
       <div className="mt-5 overflow-hidden rounded-xl2 bg-white shadow-card ring-1 ring-surface-line">
         <table className="w-full text-sm">
@@ -194,19 +111,14 @@ export function ConfigPage() {
               <th className="px-4 py-3">Monitorar</th>
               <th className="px-4 py-3">Agenda (SGG)</th>
               <th className="px-4 py-3">Local</th>
-              <th className="px-4 py-3">Agenda de encaixe</th>
-              <th className="px-4 py-3 text-center">Encaixe padrão</th>
-              <th className="px-4 py-3 text-center" title="Inclui no encaixe, automaticamente, quem tem agendamento hoje nas outras agendas da mesma unidade">
-                Incluir da unidade
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-surface-line">
             {carregando && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Carregando…</td></tr>
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-ink-muted">Carregando…</td></tr>
             )}
             {!carregando && itens.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-ink-muted">Nenhuma agenda. Clique em “Sincronizar com o SGG”.</td></tr>
+              <tr><td colSpan={3} className="px-4 py-10 text-center text-ink-muted">Nenhuma agenda. Clique em “Sincronizar com o SGG”.</td></tr>
             )}
             {itens.map((i) => (
               <tr key={i.agenda_id_sgg} className={`${i.monitorada ? "" : "text-ink-muted"} ${i.ativa ? "" : "opacity-50"}`}>
@@ -233,51 +145,110 @@ export function ConfigPage() {
                   <span className="ml-2 font-mono text-xs text-ink-soft">#{i.agenda_id_sgg}</span>
                 </td>
                 <td className="px-4 py-3">{i.local_nome ?? "—"}</td>
-                <td className="px-4 py-3">
-                  <select
-                    className="field py-2"
-                    disabled={!i.monitorada}
-                    value={i.agenda_encaixe_id_sgg ?? ""}
-                    onChange={(e) => atualizar(i.agenda_id_sgg, { agenda_encaixe_id_sgg: e.target.value || null })}
-                    aria-label={`Agenda de encaixe para ${i.agenda_nome}`}
-                  >
-                    <option value="">— selecione —</option>
-                    {opcoesEncaixe.map((o) => (
-                      <option key={o.agenda_id_sgg} value={o.agenda_id_sgg}>{o.agenda_nome}</option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <input
-                    type="radio"
-                    name="encaixe_padrao"
-                    className="h-5 w-5 accent-brand-red"
-                    disabled={!i.monitorada || !i.agenda_encaixe_id_sgg}
-                    checked={i.encaixe_padrao}
-                    onChange={() => atualizar(i.agenda_id_sgg, { encaixe_padrao: true })}
-                    aria-label={`Definir ${i.agenda_nome} como encaixe padrão`}
-                  />
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <input
-                    type="checkbox"
-                    className="h-5 w-5 accent-brand-blue"
-                    disabled={!i.monitorada || !podeIncluirDaUnidade(i)}
-                    checked={i.incluir_da_unidade}
-                    onChange={(e) => atualizar(i.agenda_id_sgg, { incluir_da_unidade: e.target.checked })}
-                    title={
-                      i.monitorada && i.agenda_encaixe_id_sgg && !podeIncluirDaUnidade(i)
-                        ? "Só funciona com agenda de encaixe por ordem de chegada"
-                        : undefined
-                    }
-                    aria-label={`Incluir no encaixe os agendamentos da unidade de ${i.agenda_nome}`}
-                  />
-                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function GuichesCard({ itens }: { itens: ConfiguracaoAgenda[] }) {
+  const [guiches, setGuiches] = useState<Guiches | null>(null);
+  const [g1, setG1] = useState<string>("");
+  const [g2, setG2] = useState<string>("");
+  const [carregando, setCarregando] = useState(true);
+  const [ocupado, setOcupado] = useState(false);
+  const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+
+  const carregar = useCallback(async () => {
+    setCarregando(true);
+    try {
+      const g = await adminApi.guiches();
+      setGuiches(g);
+      setG1(g.guiche_1_agenda_id_sgg ?? "");
+      setG2(g.guiche_2_agenda_id_sgg ?? "");
+    } catch (e) {
+      setMsg({ tipo: "erro", texto: tratar(e) });
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const opcoes = useMemo(() => itens.filter((i) => i.ativa && i.por_ordem_chegada), [itens]);
+  const alterado =
+    !guiches ||
+    g1 !== (guiches.guiche_1_agenda_id_sgg ?? "") ||
+    g2 !== (guiches.guiche_2_agenda_id_sgg ?? "");
+
+  const salvar = async () => {
+    setOcupado(true);
+    setMsg(null);
+    try {
+      await adminApi.salvarGuiches(g1 || null, g2 || null);
+      setMsg({ tipo: "ok", texto: "Guichês salvos. Novos check-ins já usam a nova configuração." });
+      await carregar();
+    } catch (e) {
+      setMsg({ tipo: "erro", texto: tratar(e) });
+    } finally {
+      setOcupado(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl2 bg-white p-5 shadow-card ring-1 ring-surface-line">
+      <h2 className="text-lg font-bold">Guichês de atendimento</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Toda chegada confirmada no totem nasce num destes dois guichês — não importa em qual
+        agenda o paciente estava agendado. Atendimento <strong>Preferencial</strong> vai sempre
+        para o Guichê 1; <strong>Normal</strong> é distribuído para quem tiver menos gente
+        aguardando agora, alternando em caso de empate. Cada guichê precisa ser uma agenda do SGG
+        por <strong>ordem de chegada</strong>.
+      </p>
+
+      {!carregando && opcoes.length === 0 && (
+        <p className="mt-3 rounded-lg bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
+          Nenhuma agenda por ordem de chegada disponível. Sincronize com o SGG ou crie uma lá antes.
+        </p>
+      )}
+      {!carregando && !g1 && !g2 && (
+        <p className="mt-3 rounded-lg bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
+          Nenhum guichê configurado. O check-in vai falhar até pelo menos o Guichê 1 ser definido.
+        </p>
+      )}
+      {msg && (
+        <p className={`mt-3 rounded-lg px-4 py-3 text-sm font-medium ${msg.tipo === "ok" ? "bg-ok-soft text-ok" : "bg-brand-red-50 text-brand-red"}`}>{msg.texto}</p>
+      )}
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label className="block text-sm font-semibold">
+          Guichê 1
+          <select className="field mt-1" value={g1} onChange={(e) => setG1(e.target.value)} disabled={carregando}>
+            <option value="">— selecione —</option>
+            {opcoes.map((o) => (
+              <option key={o.agenda_id_sgg} value={o.agenda_id_sgg}>{o.agenda_nome}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold">
+          Guichê 2
+          <select className="field mt-1" value={g2} onChange={(e) => setG2(e.target.value)} disabled={carregando}>
+            <option value="">— selecione —</option>
+            {opcoes.map((o) => (
+              <option key={o.agenda_id_sgg} value={o.agenda_id_sgg}>{o.agenda_nome}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <button onClick={salvar} disabled={!alterado || ocupado} className="btn-primary mt-4">
+        Salvar guichês
+      </button>
     </div>
   );
 }

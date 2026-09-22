@@ -11,7 +11,7 @@ def test_totem_identificar_e_checkin(client):
 
     r = client.post("/totem/checkin", json={"cpf": "529.982.247-25", "tipo_atendimento": "NORMAL"})
     assert r.status_code == 200, r.text
-    assert r.json()["resultado"] == "STATUS_ATUALIZADO"
+    assert r.json()["resultado"] == "AGENDAMENTO_CONFIRMADO"
 
     r = client.post("/totem/checkin", json={"cpf": "529.982.247-25", "tipo_atendimento": "NORMAL"})
     assert r.status_code == 409
@@ -40,17 +40,12 @@ def test_admin_configuracoes_roundtrip(client, admin_headers):
     r = client.get("/admin/configuracoes", headers=admin_headers)
     assert r.status_code == 200
     itens = r.json()
-    assert len(itens) == 5
+    assert len(itens) == 6
     a1 = next(i for i in itens if i["agenda_id_sgg"] == "A1")
-    assert a1["monitorada"] is True and a1["agenda_encaixe_id_sgg"] == "A4"
+    assert a1["monitorada"] is True
 
     novo = [
-        {
-            "agenda_id_sgg": i["agenda_id_sgg"],
-            "monitorada": i["agenda_id_sgg"] == "A5",
-            "agenda_encaixe_id_sgg": "A4" if i["agenda_id_sgg"] == "A5" else None,
-            "encaixe_padrao": i["agenda_id_sgg"] == "A5",
-        }
+        {"agenda_id_sgg": i["agenda_id_sgg"], "monitorada": i["agenda_id_sgg"] == "A5"}
         for i in itens
     ]
     r = client.put("/admin/configuracoes", json={"configuracoes": novo}, headers=admin_headers)
@@ -59,30 +54,50 @@ def test_admin_configuracoes_roundtrip(client, admin_headers):
     assert [i["agenda_id_sgg"] for i in itens if i["monitorada"]] == ["A5"]
 
 
-def test_admin_rejeita_dois_padroes(client, admin_headers):
+def test_admin_rejeita_agenda_repetida(client, admin_headers):
     body = {
         "configuracoes": [
-            {
-                "agenda_id_sgg": "A1",
-                "monitorada": True,
-                "agenda_encaixe_id_sgg": "A4",
-                "encaixe_padrao": True,
-            },
-            {
-                "agenda_id_sgg": "A2",
-                "monitorada": True,
-                "agenda_encaixe_id_sgg": "A4",
-                "encaixe_padrao": True,
-            },
+            {"agenda_id_sgg": "A1", "monitorada": True},
+            {"agenda_id_sgg": "A1", "monitorada": True},
         ]
     }
     r = client.put("/admin/configuracoes", json=body, headers=admin_headers)
     assert r.status_code == 400
 
 
+def test_admin_guiches_roundtrip(client, admin_headers):
+    r = client.get("/admin/guiches", headers=admin_headers)
+    assert r.status_code == 200
+    assert r.json() == {
+        "guiche_1_agenda_id_sgg": "A4",
+        "guiche_1_agenda_nome": "Recepção",
+        "guiche_2_agenda_id_sgg": "A6",
+        "guiche_2_agenda_nome": "Guichê 2",
+    }
+
+    r = client.put(
+        "/admin/guiches",
+        json={"guiche_1_agenda_id_sgg": "A4", "guiche_2_agenda_id_sgg": None},
+        headers=admin_headers,
+    )
+    assert r.status_code == 204, r.text
+    assert (
+        client.get("/admin/guiches", headers=admin_headers).json()["guiche_2_agenda_id_sgg"] is None
+    )
+
+
+def test_admin_guiches_rejeita_agenda_por_hora_marcada(client, admin_headers):
+    r = client.put(
+        "/admin/guiches",
+        json={"guiche_1_agenda_id_sgg": "A1", "guiche_2_agenda_id_sgg": None},
+        headers=admin_headers,
+    )
+    assert r.status_code == 400
+
+
 def test_admin_sincronizar_e_logs(client, admin_headers):
     r = client.post("/admin/sincronizar", headers=admin_headers)
-    assert r.status_code == 200 and r.json()["agendas"] == 5
+    assert r.status_code == 200 and r.json()["agendas"] == 6
     r = client.get("/admin/logs?limite=10", headers=admin_headers)
     assert r.status_code == 200 and r.json()[0]["tipo"] == "SINCRONIZACAO"
     r = client.get("/admin/sincronizacao", headers=admin_headers)
@@ -95,21 +110,3 @@ def test_timestamps_de_auditoria_tem_fuso(client, admin_headers):
     assert item["criado_em"].endswith("+00:00") or item["criado_em"].endswith("Z")
     st = client.get("/admin/sincronizacao", headers=admin_headers).json()
     assert st["executado_em"].endswith("+00:00") or st["executado_em"].endswith("Z")
-
-
-def test_admin_encaixe_automatico_validacao_e_simulacao(client, admin_headers):
-    base = {"agenda_id_sgg": "A1", "monitorada": True, "encaixe_padrao": True}
-    # A2 é por hora marcada: não serve para inclusão automática.
-    ruim = {"configuracoes": [{**base, "agenda_encaixe_id_sgg": "A2", "incluir_da_unidade": True}]}
-    assert client.put("/admin/configuracoes", json=ruim, headers=admin_headers).status_code == 400
-
-    boa = {"configuracoes": [{**base, "agenda_encaixe_id_sgg": "A4", "incluir_da_unidade": True}]}
-    assert client.put("/admin/configuracoes", json=boa, headers=admin_headers).status_code == 204
-    itens = client.get("/admin/configuracoes", headers=admin_headers).json()
-    assert next(i for i in itens if i["agenda_id_sgg"] == "A1")["incluir_da_unidade"] is True
-
-    r = client.post("/admin/encaixe-automatico/executar", headers=admin_headers)
-    assert r.status_code == 200
-    corpo = r.json()
-    assert corpo["simulado"] is True and isinstance(corpo["incluidos"], list)
-    assert client.post("/admin/encaixe-automatico/executar").status_code == 401

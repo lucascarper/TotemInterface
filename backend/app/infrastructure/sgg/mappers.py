@@ -155,5 +155,4 @@ def to_agendamento(d: dict, agenda_id_sgg: str) -> Agendamento:
         status=status_from_sgg(d.get("situacao")),
         tipo_atendimento=tipo,
         observacao=obs,
-        empresa_id_sgg=_texto(d.get("id_empresa")),
     )

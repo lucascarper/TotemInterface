@@ -1,5 +1,5 @@
 export type TipoAtendimento = "PREFERENCIAL" | "NORMAL";
-export type ResultadoCheckin = "STATUS_ATUALIZADO" | "ENCAIXE_CRIADO";
+export type ResultadoCheckin = "AGENDAMENTO_CONFIRMADO" | "ENCAIXE_CRIADO";
 
 export interface PacientePublico {
   id_sgg: string;
@@ -32,9 +32,13 @@ export interface ConfiguracaoAgenda {
   ativa: boolean;
   por_ordem_chegada: boolean;
   monitorada: boolean;
-  agenda_encaixe_id_sgg: string | null;
-  encaixe_padrao: boolean;
-  incluir_da_unidade: boolean;
+}
+
+export interface Guiches {
+  guiche_1_agenda_id_sgg: string | null;
+  guiche_1_agenda_nome: string | null;
+  guiche_2_agenda_id_sgg: string | null;
+  guiche_2_agenda_nome: string | null;
 }
 
 export interface StatusSincronizacao {
@@ -57,19 +61,4 @@ export interface LogItem {
   agenda_id_sgg: string | null;
   tipo_atendimento: TipoAtendimento | null;
   detalhes: Record<string, unknown>;
-}
-
-export interface ResultadoEncaixeAutomatico {
-  simulado: boolean;
-  incluidos: {
-    funcionario_id_sgg: string;
-    agenda_origem_nome: string;
-    agenda_encaixe_nome: string;
-    agendamento_origem_id_sgg: string;
-  }[];
-  ja_existiam: number;
-  sem_cadastro: number;
-  recusados: number;
-  adiados: number;
-  avisos: string[];
 }
