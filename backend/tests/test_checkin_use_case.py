@@ -41,6 +41,10 @@ def test_checkin_confirma_agendamento_criando_registro_no_guiche(container_confi
     assert criado.status == StatusAgendamento.AGUARDANDO
     assert "Clínico Geral" in criado.observacao
     assert not criado.observacao.startswith("[PREFERENCIAL]")  # Normal não leva marcador
+    # Horário da chegada (agora, via FixedClock) distinto do horário do agendamento original.
+    assert criado.observacao == (
+        "Chegada via totem 08:15 - agendado 09:30 em Clínico Geral - Dr. Roberto"
+    )
 
 
 def test_checkin_preferencial_marca_observacao_com_prefixo(container_configurado, sgg):
@@ -58,6 +62,7 @@ def test_checkin_cria_encaixe_quando_nao_ha_agendamento(container_configurado, s
     assert criado.status == StatusAgendamento.AGUARDANDO
     assert criado.tipo_atendimento == TipoAtendimento.PREFERENCIAL
     assert dto.agenda_nome == "Recepção"
+    assert criado.observacao == "[PREFERENCIAL] Encaixe via totem 08:15"
 
 
 def test_checkin_repetido_nao_duplica(container_configurado):

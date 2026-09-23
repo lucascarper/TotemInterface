@@ -89,7 +89,11 @@ precisa se destacar por convenção em dois lugares:
   prefixo `[PREFERENCIAL] ` no **início** do texto — não no fim, porque listas do SGG podem
   truncar a observação e um marcador no final some primeiro. Marcador em ASCII puro (sem
   emoji/unicode) para não depender de suporte de fonte na tela do SGG. Normal não leva marcador
-  (menos ruído visual quando a maioria dos atendimentos é comum).
+  (menos ruído visual quando a maioria dos atendimentos é comum). O texto sempre traz o horário
+  real da chegada ao totem (`agora`), não só o horário do agendamento original — ex.:
+  `Chegada via totem 08:15 - agendado 09:30 em Clínico Geral`. O separador é um hífen simples, não
+  um em-dash unicode: a versão anterior usava "—" e aparecia como "?" na tela do SGG (mesmo motivo
+  do marcador em ASCII puro).
 * **Auditoria do painel** (`LogsPage.tsx`): linhas de Preferencial recebem uma barra vermelha à
   esquerda e fundo levemente tingido, e a coluna "Tipo" mostra um selo vermelho com estrela em
   vez de texto simples — para pular aos olhos ao rolar a lista, sem precisar ler cada linha.

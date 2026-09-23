@@ -21,7 +21,7 @@ Regras:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
 from app.application.dto import CheckinDTO
 from app.application.use_cases._agendamentos import (
@@ -103,7 +103,7 @@ class RealizarCheckinUseCase:
                 )
                 raise AgendaEncaixeNaoConfiguradaError()
 
-            observacao = self._observacao(pendente, agendas, tipo)
+            observacao = self._observacao(pendente, agendas, tipo, agora)
             criado = self._sgg.criar_agendamento(
                 paciente=paciente,
                 agenda_id_sgg=destino,
@@ -201,16 +201,26 @@ class RealizarCheckinUseCase:
             uow.commit()
 
     def _observacao(
-        self, pendente: Agendamento | None, agendas: dict, tipo: TipoAtendimento
+        self,
+        pendente: Agendamento | None,
+        agendas: dict,
+        tipo: TipoAtendimento,
+        agora: datetime,
     ) -> str:
         # Prefixo (não sufixo): listas do próprio SGG costumam truncar o texto pela
         # direita, então um "(preferencial)" no final pode nunca aparecer. Em caixa
         # alta e só ASCII para não depender de suporte a emoji/unicode na tela do SGG.
+        # Pelo mesmo motivo, o separador é um hífen simples, não um em-dash unicode
+        # (que aparecia como "?" na tela do SGG).
         prefixo = "[PREFERENCIAL] " if tipo == TipoAtendimento.PREFERENCIAL else ""
+        hora_chegada = f"{agora:%H:%M}"
         if pendente is None:
-            return f"{prefixo}Encaixe via totem"
+            return f"{prefixo}Encaixe via totem {hora_chegada}"
         origem = self._nome_agenda(agendas, pendente.agenda_id_sgg)
-        return f"{prefixo}Chegada via totem — agendado {pendente.data_hora:%H:%M} em {origem}"
+        return (
+            f"{prefixo}Chegada via totem {hora_chegada} - agendado "
+            f"{pendente.data_hora:%H:%M} em {origem}"
+        )
 
     @staticmethod
     def _nome_agenda(agendas, agenda_id: str) -> str:
