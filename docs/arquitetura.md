@@ -80,6 +80,24 @@ criação de encaixe (`POST`) e mudança de situação (`PUT`).
 * `api/client.ts` — `ApiError` tipado (`codigo`, `mensagem`, `status`) para as telas decidirem o que mostrar.
 * PWA (`vite-plugin-pwa`) em modo `fullscreen`; a API nunca é cacheada (`NetworkOnly`).
 
+### Ajuste ao tablet da recepção (sem rolagem)
+
+O tablet físico usado na recepção tem tela de 8,7" e resolução 1920×1200, mas o navegador
+reporta uma viewport CSS bem menor (o Android aplica um `devicePixelRatio` alto nesse
+tamanho de painel). Em orientação paisagem isso pode significar uma altura útil de ~600px
+CSS, e o layout original (alturas fixas em `rem` para teclado, cartões e botões) não cabia
+nesse espaço — daí os pacientes precisarem rolar a tela.
+
+Correção: `KioskShell` fixa a altura em `100dvh` com `overflow-hidden` (nunca rola a página
+inteira) e o cabeçalho/rodapé usam `clamp(mínimo, Ndvh, máximo)` para encolher em telas
+baixas. Na tela de CPF (`CpfScreen`), o teclado numérico deixou de ter altura fixa por tecla
+e passou a ser um grid com `flex-1` + `grid-rows-4`, ocupando exatamente o espaço que sobrar
+depois do cabeçalho, do CPF digitado e do botão "Continuar" — funciona em qualquer altura de
+viewport sem precisar acertar valores manualmente. As demais telas (`ConfirmScreen`,
+`SuccessScreen`, `ErrorScreen`) tiveram margens/paddings/ícones reduzidos para caber no
+mesmo orçamento vertical, mantendo o tamanho do texto (importante para pacientes
+idosos/preferenciais) e reduzindo o que é só espaçamento decorativo.
+
 ## Destaque de atendimentos Preferenciais
 
 O SGG não tem campo nativo de prioridade, então o tipo de atendimento (Preferencial/Normal)
