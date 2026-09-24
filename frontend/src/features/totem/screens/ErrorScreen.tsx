@@ -26,25 +26,25 @@ export function ErrorScreen({ codigo, mensagem, segundos, tentarNovamente, onTen
 
   return (
     <div className="w-full max-w-xl animate-rise text-center">
-      <div className={`mx-auto grid h-28 w-28 animate-pop place-items-center rounded-full ${tom}`}>
-        <IconAlert className="h-14 w-14" />
+      <div className={`mx-auto grid h-24 w-24 animate-pop place-items-center rounded-full ${tom}`}>
+        <IconAlert className="h-12 w-12" />
       </div>
-      <h1 className="mt-6 text-4xl font-bold tracking-tight">{TITULOS[codigo] ?? "Algo deu errado"}</h1>
-      <p className="mt-3 text-xl text-ink-muted">{mensagem}</p>
+      <h1 className="mt-4 text-4xl font-bold tracking-tight">{TITULOS[codigo] ?? "Algo deu errado"}</h1>
+      <p className="mt-2 text-xl text-ink-muted">{mensagem}</p>
 
       {recepcao && (
-        <div className="mx-auto mt-6 max-w-md rounded-xl2 bg-white px-6 py-4 text-lg font-semibold text-brand-blue shadow-card ring-1 ring-surface-line">
+        <div className="mx-auto mt-4 max-w-md rounded-xl2 bg-white px-6 py-3 text-lg font-semibold text-brand-blue shadow-card ring-1 ring-surface-line">
           Por favor, dirija-se ao balcão da recepção para ser atendido(a).
         </div>
       )}
 
-      <div className="mt-8 flex justify-center gap-4">
+      <div className="mt-5 flex justify-center gap-4">
         {tentarNovamente && (
-          <button onClick={onTentar} className="btn-big h-16 bg-brand-blue px-8 text-xl">
+          <button onClick={onTentar} className="btn-big h-[clamp(2.5rem,7dvh,4rem)] bg-brand-blue px-8 text-xl">
             Tentar novamente
           </button>
         )}
-        <button onClick={onInicio} className="btn-big h-16 bg-white px-8 text-xl !text-ink-muted ring-1 ring-surface-line">
+        <button onClick={onInicio} className="btn-big h-[clamp(2.5rem,7dvh,4rem)] bg-white px-8 text-xl !text-ink-muted ring-1 ring-surface-line">
           Voltar ao início
         </button>
       </div>

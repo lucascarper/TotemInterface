@@ -24,8 +24,8 @@
            focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-blue-200;
   }
   .key {
-    @apply flex h-20 items-center justify-center rounded-xl2 bg-surface text-4xl font-semibold
-           text-ink shadow-card ring-1 ring-surface-line transition-all duration-100
+    @apply flex items-center justify-center rounded-xl2 bg-surface text-[clamp(1.5rem,5dvh,2.25rem)]
+           font-semibold text-ink shadow-card ring-1 ring-surface-line transition-all duration-100
            active:translate-y-px active:bg-brand-blue-50 active:shadow-press select-none focus:outline-none;
   }
   .field {

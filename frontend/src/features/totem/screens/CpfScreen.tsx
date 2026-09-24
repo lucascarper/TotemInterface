@@ -33,17 +33,17 @@ export function CpfScreen({ tipo, cpf, erro, onDigito, onApagar, onLimpar, onBus
   const tipoCls = tipo === "PREFERENCIAL" ? "bg-brand-red-50 text-brand-red" : "bg-brand-blue-50 text-brand-blue";
 
   return (
-    <div className="w-full max-w-lg animate-rise">
-      <div className="text-center">
+    <div className="flex h-full w-full max-w-lg flex-col animate-rise">
+      <div className="shrink-0 text-center">
         <span className={`badge ${tipoCls} px-3 py-1 text-sm`}>
           {tipo === "PREFERENCIAL" ? "Atendimento preferencial" : "Atendimento normal"}
         </span>
-        <h1 className="mt-4 text-3xl font-bold tracking-tight md:text-4xl">Digite seu CPF</h1>
-        <p className="mt-2 text-ink-muted">Apenas os números</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight md:text-4xl">Digite seu CPF</h1>
+        <p className="mt-1 text-ink-muted">Apenas os números</p>
       </div>
 
       <div
-        className={`mt-8 whitespace-nowrap rounded-xl2 bg-white px-4 py-5 text-center font-mono text-[2.1rem] tracking-[.08em] shadow-card ring-2 sm:text-4xl sm:tracking-[.1em] ${
+        className={`mt-4 shrink-0 whitespace-nowrap rounded-xl2 bg-white px-4 py-3 text-center font-mono text-[2.1rem] tracking-[.08em] shadow-card ring-2 sm:text-4xl sm:tracking-[.1em] ${
           erro ? "animate-shake ring-brand-red" : completo ? "ring-ok" : "ring-surface-line"
         }`}
         aria-live="polite"
@@ -51,9 +51,9 @@ export function CpfScreen({ tipo, cpf, erro, onDigito, onApagar, onLimpar, onBus
       >
         {cpf ? formatarCpf(cpf) : <span className="text-ink-soft">000.000.000-00</span>}
       </div>
-      <p className={`mt-2 h-6 text-center text-sm font-medium text-brand-red ${erro ? "" : "invisible"}`}>{erro ?? "•"}</p>
+      <p className={`mt-1 h-6 shrink-0 text-center text-sm font-medium text-brand-red ${erro ? "" : "invisible"}`}>{erro ?? "•"}</p>
 
-      <div className="mt-4 grid grid-cols-3 gap-3">
+      <div className="mt-3 grid min-h-0 flex-1 grid-cols-3 grid-rows-4 gap-2">
         {TECLAS.map((t) => (
           <button key={t} className="key" onClick={() => onDigito(t)} aria-label={`Dígito ${t}`}>
             {t}
@@ -73,7 +73,7 @@ export function CpfScreen({ tipo, cpf, erro, onDigito, onApagar, onLimpar, onBus
       <button
         onClick={onBuscar}
         disabled={!completo}
-        className="btn-big mt-6 h-20 w-full bg-brand-blue text-2xl disabled:opacity-40 disabled:shadow-none"
+        className="btn-big mt-3 h-[clamp(2.75rem,8dvh,5rem)] w-full shrink-0 bg-brand-blue text-2xl disabled:opacity-40 disabled:shadow-none"
       >
         Continuar
       </button>
