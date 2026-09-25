@@ -18,6 +18,7 @@ export default {
       boxShadow: {
         card: "0 10px 30px -12px rgba(22,79,149,.18), 0 2px 6px -2px rgba(19,33,58,.08)",
         press: "inset 0 3px 8px rgba(0,0,0,.12)",
+        soft: "0 6px 18px -8px rgba(22,79,149,.28), 0 1px 2px rgba(19,33,58,.06)",
       },
       keyframes: {
         rise: { from: { opacity: 0, transform: "translateY(14px)" }, to: { opacity: 1, transform: "none" } },

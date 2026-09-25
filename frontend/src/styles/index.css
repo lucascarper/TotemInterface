@@ -18,15 +18,26 @@
       radial-gradient(60% 40% at 12% 110%, rgba(208,8,15,.08), transparent 60%),
       radial-gradient(60% 40% at 88% 110%, rgba(208,8,15,.08), transparent 60%);
   }
+  /*
+   * Totem: um único raio (rounded-xl2 = 1.25rem) para botões, teclas e cartões;
+   * selos/badges são sempre pílula. Superfícies brancas com contorno fino sobre
+   * fundo surface-alt; sombra só onde há elevação real (botões de ação e escolha).
+   */
   .btn-big {
-    @apply relative flex items-center justify-center rounded-xl3 font-semibold text-white
-           shadow-card transition-transform duration-150 active:scale-[.98] active:shadow-press
-           focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-blue-200;
+    @apply relative flex items-center justify-center gap-3 rounded-xl2 font-semibold text-white
+           shadow-soft transition duration-150 ease-out active:scale-[.985] active:shadow-none
+           focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-blue-200
+           disabled:bg-surface-line disabled:text-ink-muted disabled:shadow-none;
   }
+  .btn-outline {
+    @apply btn-big bg-white text-ink ring-1 ring-surface-line shadow-none active:bg-surface-alt;
+  }
+  .panel { @apply rounded-xl2 bg-white ring-1 ring-surface-line; }
   .key {
-    @apply flex items-center justify-center rounded-xl2 bg-surface text-[clamp(1.5rem,5dvh,2.25rem)]
-           font-semibold text-ink shadow-card ring-1 ring-surface-line transition-all duration-100
-           active:translate-y-px active:bg-brand-blue-50 active:shadow-press select-none focus:outline-none;
+    @apply flex items-center justify-center rounded-xl2 bg-white text-[clamp(1.5rem,5.5dvh,2.5rem)]
+           font-semibold tabular-nums text-ink ring-1 ring-surface-line shadow-[0_1px_0_rgba(19,33,58,.06)]
+           transition duration-100 ease-out active:scale-[.97] active:bg-brand-blue-50 active:ring-brand-blue-200
+           select-none focus:outline-none;
   }
   .field {
     @apply w-full rounded-xl border border-surface-line bg-white px-4 py-3 text-ink
@@ -42,4 +53,12 @@
   .btn-ghost { @apply btn bg-transparent text-brand-blue hover:bg-brand-blue-50; }
   .btn-danger { @apply btn bg-brand-red text-white hover:bg-brand-red-700; }
   .badge { @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
 }
