@@ -98,6 +98,17 @@ viewport sem precisar acertar valores manualmente. As demais telas (`ConfirmScre
 mesmo orçamento vertical, mantendo o tamanho do texto (importante para pacientes
 idosos/preferenciais) e reduzindo o que é só espaçamento decorativo.
 
+### Linguagem visual do totem
+
+O tablet fica em **paisagem**. Em telas a partir de `md` (768px), CPF e Confirmação usam duas
+colunas: na tela de CPF o teclado ocupa a altura toda à direita (teclas de ~117px em 960x600,
+contra ~46px em coluna única); em telas estreitas tudo volta a uma coluna. Estilo claro e
+clínico: fundo `surface-alt`, superfícies brancas com contorno fino (`.panel`), um único raio
+(`rounded-xl2`) para botões, teclas e cartões, azul da marca como única cor de ação (vermelho só
+para Preferencial e erros, verde só para sucesso). Ícones da biblioteca Phosphor em peso
+`bold` (`components/Icons.tsx`). Animações só de entrada e retorno ao toque, desligadas com
+`prefers-reduced-motion`.
+
 ## Destaque de atendimentos Preferenciais
 
 O SGG não tem campo nativo de prioridade, então o tipo de atendimento (Preferencial/Normal)
