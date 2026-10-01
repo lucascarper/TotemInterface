@@ -26,6 +26,12 @@ class AgendaEncaixeNaoConfiguradaError(DomainError):
     codigo = "ENCAIXE_NAO_CONFIGURADO"
 
 
+class EmpresaInativaError(DomainError):
+    """A empresa do seu cadastro está inativa. Por favor, dirija-se à recepção."""
+
+    codigo = "EMPRESA_INATIVA"
+
+
 class CheckinJaRealizadoError(DomainError):
     """Sua chegada já foi registrada. Aguarde ser chamado."""
 

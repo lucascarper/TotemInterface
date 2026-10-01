@@ -14,12 +14,14 @@ from app.domain.entities import (
 from app.domain.exceptions import (
     AgendaEncaixeNaoConfiguradaError,
     CheckinJaRealizadoError,
+    EmpresaInativaError,
     PacienteNaoEncontradoError,
     SggOperacaoRecusadaError,
 )
 from app.infrastructure.clock import TZ
 
 MARIA, JOAO, ANA = "52998224725", "11144477735", "12345678909"
+CARLOS_EMPRESA_INATIVA = "86288366757"
 HOJE = date(2026, 9, 17)
 
 
@@ -63,6 +65,19 @@ def test_checkin_cria_encaixe_quando_nao_ha_agendamento(container_configurado, s
     assert criado.tipo_atendimento == TipoAtendimento.PREFERENCIAL
     assert dto.agenda_nome == "Recepção"
     assert criado.observacao == "[PREFERENCIAL] Encaixe via totem 08:15"
+
+
+def test_checkin_recusa_empresa_inativa_sem_criar_registro(container_configurado, sgg):
+    antes = set(sgg._agendamentos)
+    with pytest.raises(EmpresaInativaError):
+        container_configurado.realizar_checkin().executar(
+            CARLOS_EMPRESA_INATIVA, TipoAtendimento.NORMAL
+        )
+    assert set(sgg._agendamentos) == antes  # nada foi criado no guichê
+
+    logs = container_configurado.listar_logs().executar(10)
+    assert logs[0].sucesso is False and logs[0].mensagem == "Empresa inativa"
+    assert logs[0].tipo == TipoOperacao.CRIACAO_AGENDAMENTO
 
 
 def test_checkin_repetido_nao_duplica(container_configurado):

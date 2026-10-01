@@ -58,6 +58,16 @@ class SggFakeGateway:
             "12345678909": Paciente(
                 "P3", "Ana Beatriz Oliveira", Cpf("12345678909"), "1978-07-25", None, "E2"
             ),
+            # Único vínculo é de uma empresa inativa: o check-in deve ser recusado.
+            "86288366757": Paciente(
+                "P4",
+                "Carlos Eduardo Lima",
+                Cpf("86288366757"),
+                "1982-02-14",
+                None,
+                "E9",
+                empresa_ativa=False,
+            ),
         }
         d = hoje or datetime.now(TZ).date()
         self._agendamentos: dict[str, Agendamento] = {
