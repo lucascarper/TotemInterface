@@ -24,6 +24,12 @@ def test_totem_paciente_nao_encontrado(client):
     assert r.json()["codigo"] == "PACIENTE_NAO_ENCONTRADO"
 
 
+def test_totem_checkin_empresa_inativa(client):
+    r = client.post("/totem/checkin", json={"cpf": "862.883.667-57", "tipo_atendimento": "NORMAL"})
+    assert r.status_code == 409
+    assert r.json()["codigo"] == "EMPRESA_INATIVA"
+
+
 def test_totem_cpf_invalido(client):
     r = client.post("/totem/identificar", json={"cpf": "111.111.111-11"})
     assert r.status_code == 422

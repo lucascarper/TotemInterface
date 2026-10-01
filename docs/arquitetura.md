@@ -37,6 +37,8 @@ Regras que valem a pena conhecer:
   `409 CHECKIN_JA_REALIZADO` (não duplica).
 * Nenhum guichê configurado → `409 ENCAIXE_NAO_CONFIGURADO`, mesmo havendo agendamento — pelo
   menos o Guichê 1 é sempre obrigatório agora.
+* Empresa do paciente inativa no SGG (e nenhum outro vínculo do CPF numa empresa ativa) →
+  `409 EMPRESA_INATIVA`, sem criar nada no guichê. Veja o vínculo no adaptador do SGG abaixo.
 * Paciente inexistente → `404 PACIENTE_NAO_ENCONTRADO` com orientação para a recepção (RF10).
 * Toda operação grava `logs_operacao` com o **CPF mascarado** (auditabilidade + privacidade).
 
@@ -50,6 +52,13 @@ Particularidades verificadas contra a API real:
 * Erros e retorno vazio chegam com HTTP 200: o que vale é `statusCode` (`D000` ok, `D001` vazio, demais = erro).
 * Escritas devolvem `returnInfo` como *string JSON* com `{codigo,msg}` ou `{erro,msg}`; recusa vira `SggOperacaoRecusadaError` (HTTP 409 para o totem, que orienta o paciente à recepção).
 * Agendamentos referenciam a agenda pelo nome; o gateway mantém um mapa nome ⇄ id, renovado a cada sincronização.
+* Um CPF pode ter vários vínculos (`funcionario/`), um por empresa, inclusive empresas antigas já
+  inativas. `buscar_paciente_por_cpf` consulta `empresa/` (filtro `codigo`; o filtro `id_empresa`
+  é ignorado e devolveria as ~2.300 empresas) e devolve o primeiro vínculo cuja empresa tem
+  `situacao` = `ativa` (preferindo funcionário `Ativo` e o editado mais recentemente). Se nenhum
+  serve, devolve o preferido com `empresa_ativa=False` e o check-in recusa. Empresa inexistente,
+  sem `id_empresa` ou qualquer valor diferente de `ativa` conta como inativa. Custo: uma consulta
+  extra a `empresa/` por empresa distinta, parando na primeira ativa.
 * `POST /agendamento/` exige `id_empresa`, por isso `Paciente` carrega `empresa_id_sgg`.
 * Agendas por hora marcada exigem `hora_agendamento` alinhada à grade; o gateway arredonda para o próximo múltiplo da duração padrão. Agendas por ordem de chegada não recebem hora (recomendadas como encaixe).
 * HTTP 429 (limite de requisições) e códigos `A*`/`S*` viram `SggIndisponivelError` (HTTP 503), sem travar o totem.

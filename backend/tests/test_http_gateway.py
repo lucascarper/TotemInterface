@@ -111,37 +111,106 @@ def test_paciente_por_cpf_envia_mascara_e_retorno_vazio_vira_none():
     assert gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725")) is None
 
 
-def test_paciente_por_cpf_prefere_vinculo_ativo():
+def vinculo(id_func, id_empresa, situacao="Ativo", edicao="2024-01-01 10:00:00"):
+    return {
+        "id_funcionario": id_func,
+        "id_empresa": id_empresa,
+        "nome": "Maria",
+        "CPF": "529.982.247-25",
+        "situacao": situacao,
+        "fone_celular": "(61) 99999-1234",
+        "data_nascimento": "1985-03-12",
+        "data_hora_edicao": edicao,
+    }
+
+
+def sgg_com_vinculos(vinculos, empresas, consultas=None):
+    """Handler: `funcionario/` devolve os vínculos; `empresa/` responde pelo `codigo`."""
+
     def handler(req):
+        if req.url.path.endswith("/funcionario/"):
+            return httpx.Response(200, json=ok(vinculos))
+        assert req.url.path.endswith("/empresa/")
+        codigo = body_of(req)["codigo"]
+        if consultas is not None:
+            consultas.append(codigo)
+        situacao = empresas.get(codigo)
+        if situacao is None:
+            return httpx.Response(200, json=VAZIO)
         return httpx.Response(
-            200,
-            json=ok(
-                [
-                    {
-                        "id_funcionario": "1",
-                        "id_empresa": "10",
-                        "nome": "Maria",
-                        "CPF": "529.982.247-25",
-                        "situacao": "Demitido",
-                        "fone_celular": "",
-                        "data_nascimento": "1985-03-12",
-                    },
-                    {
-                        "id_funcionario": "2",
-                        "id_empresa": "20",
-                        "nome": "Maria",
-                        "CPF": "529.982.247-25",
-                        "situacao": "Ativo",
-                        "fone_celular": "(61) 99999-1234",
-                        "data_nascimento": "1985-03-12",
-                    },
-                ]
-            ),
+            200, json=ok([{"id_empresa": codigo, "nome": f"E{codigo}", "situacao": situacao}])
         )
 
+    return handler
+
+
+def test_paciente_por_cpf_prefere_vinculo_ativo():
+    handler = sgg_com_vinculos(
+        [vinculo("1", "10", situacao="Demitido"), vinculo("2", "20")],
+        {"10": "ativa", "20": "ativa"},
+    )
     p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
     assert p is not None and p.id_sgg == "2" and p.empresa_id_sgg == "20"
     assert p.telefone_mascarado == "(**) *****-1234"
+    assert p.empresa_ativa is True
+
+
+def test_paciente_por_cpf_ignora_vinculo_de_empresa_inativa():
+    """Caso real: vínculo antigo (empresa inativa) e atual (SEFIX, ativa) do mesmo CPF."""
+    handler = sgg_com_vinculos(
+        [
+            vinculo("1", "10", edicao="2025-06-01 09:00:00"),  # antiga, editada por último
+            vinculo("2", "20", edicao="2023-01-01 09:00:00"),  # SEFIX
+        ],
+        {"10": "inativa", "20": "ativa"},
+    )
+    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.id_sgg == "2" and p.empresa_id_sgg == "20"
+    assert p.empresa_ativa is True
+
+
+def test_paciente_por_cpf_desempata_pelo_vinculo_editado_mais_recentemente():
+    handler = sgg_com_vinculos(
+        [
+            vinculo("1", "10", edicao="2022-01-01 09:00:00"),
+            vinculo("2", "20", edicao="2025-01-01 09:00:00"),
+        ],
+        {"10": "ativa", "20": "ativa"},
+    )
+    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.id_sgg == "2"
+
+
+def test_paciente_por_cpf_sem_empresa_ativa_vem_marcado_como_inativo():
+    handler = sgg_com_vinculos(
+        [vinculo("1", "10"), vinculo("2", "20")],
+        {"10": "inativa", "20": "inativa"},
+    )
+    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.empresa_ativa is False
+
+
+def test_paciente_por_cpf_empresa_inexistente_ou_sem_id_conta_como_inativa():
+    handler = sgg_com_vinculos([vinculo("1", "10"), vinculo("2", "")], {})
+    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.empresa_ativa is False
+
+
+def test_paciente_por_cpf_consulta_cada_empresa_uma_vez_e_para_na_primeira_ativa():
+    consultas: list[str] = []
+    handler = sgg_com_vinculos(
+        [
+            vinculo("1", "10", edicao="2025-03-01 00:00:00"),
+            vinculo("2", "10", edicao="2025-02-01 00:00:00"),
+            vinculo("3", "20", edicao="2025-01-01 00:00:00"),
+            vinculo("4", "30", edicao="2024-01-01 00:00:00"),
+        ],
+        {"10": "inativa", "20": "ativa", "30": "ativa"},
+        consultas,
+    )
+    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.id_sgg == "3"
+    assert consultas == ["10", "20"]
 
 
 def test_listar_agendamentos_filtra_por_agenda_monitorada():

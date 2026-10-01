@@ -15,12 +15,13 @@ const TITULOS: Record<string, string> = {
   CHECKIN_JA_REALIZADO: "Chegada já registrada",
   ENCAIXE_NAO_CONFIGURADO: "Não foi possível registrar",
   SGG_RECUSOU: "Não foi possível registrar",
+  EMPRESA_INATIVA: "Empresa inativa",
   SGG_INDISPONIVEL: "Sistema indisponível",
   SEM_CONEXAO: "Sem conexão",
 };
 
 export function ErrorScreen({ codigo, mensagem, segundos, tentarNovamente, onTentar, onInicio }: Props) {
-  const recepcao = ["PACIENTE_NAO_ENCONTRADO", "ENCAIXE_NAO_CONFIGURADO", "SGG_RECUSOU"].includes(codigo);
+  const recepcao = ["PACIENTE_NAO_ENCONTRADO", "ENCAIXE_NAO_CONFIGURADO", "SGG_RECUSOU", "EMPRESA_INATIVA"].includes(codigo);
   const info = codigo === "CHECKIN_JA_REALIZADO";
   const tom = info ? "bg-brand-blue-50 text-brand-blue" : "bg-brand-red-50 text-brand-red";
 

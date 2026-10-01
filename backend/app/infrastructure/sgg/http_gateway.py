@@ -172,11 +172,28 @@ class SggHttpGateway:
         itens = self._consultar("funcionario/", {"cpf": cpf.formatado})
         if not itens:
             return None
-        # Um CPF pode ter mais de um vínculo; preferimos o Ativo mais recente.
-        itens.sort(
-            key=lambda i: (str(i.get("situacao")) != "Ativo", str(i.get("data_hora_edicao", "")))
-        )
-        return mappers.to_paciente(itens[0])
+        # Um CPF pode ter vários vínculos (um por empresa, inclusive empresas antigas que já
+        # foram inativadas). Ordem de preferência: funcionário Ativo e, dentro disso, o editado
+        # mais recentemente (duas passadas porque o sort estável não inverte só uma chave).
+        itens.sort(key=lambda i: str(i.get("data_hora_edicao", "")), reverse=True)
+        itens.sort(key=lambda i: str(i.get("situacao")) != "Ativo")
+        # Só vale um vínculo cuja EMPRESA esteja ativa; se nenhum servir, devolvemos o
+        # preferido marcado como inativo para o check-in recusar com "Empresa inativa".
+        status_empresa: dict[str, bool] = {}
+        for item in itens:
+            empresa_id = str(item.get("id_empresa") or "")
+            if empresa_id not in status_empresa:
+                status_empresa[empresa_id] = bool(empresa_id) and self._empresa_ativa(empresa_id)
+            if status_empresa[empresa_id]:
+                return mappers.to_paciente(item, empresa_ativa=True)
+        return mappers.to_paciente(itens[0], empresa_ativa=False)
+
+    def _empresa_ativa(self, empresa_id: str) -> bool:
+        # O filtro é `codigo`; `id_empresa` é ignorado pela API e devolveria todas as empresas.
+        for empresa in self._consultar("empresa/", {"codigo": empresa_id}):
+            if str(empresa.get("id_empresa")) == empresa_id:
+                return str(empresa.get("situacao", "")).strip().lower() == "ativa"
+        return False
 
     def listar_agendamentos(
         self, paciente_id_sgg: str, agenda_ids_sgg: list[str], data: date

@@ -14,6 +14,8 @@ Regras:
     2) Normal vai para o guichê com menos gente "Aguardando" agora (consulta ao vivo no
        SGG); em caso de empate, alterna com quem foi usado por último (round-robin).
     3) Com um único guichê configurado, todo mundo vai para ele, sem distribuição.
+- Se o paciente só tem vínculos em empresas inativas no SGG, recusa com EMPRESA_INATIVA antes
+  de criar qualquer registro (o gateway já prefere o vínculo de uma empresa ativa).
 - Toda operação é registrada para auditoria.
 - Atendimento Preferencial ganha um marcador `[PREFERENCIAL]` no início da observação
   enviada ao SGG (veja `_observacao`), para se destacar em qualquer lista dentro do SGG.
@@ -43,6 +45,7 @@ from app.domain.entities import (
 from app.domain.exceptions import (
     AgendaEncaixeNaoConfiguradaError,
     CheckinJaRealizadoError,
+    EmpresaInativaError,
     PacienteNaoEncontradoError,
     SggIndisponivelError,
     SggOperacaoRecusadaError,
@@ -89,6 +92,18 @@ class RealizarCheckinUseCase:
                 raise CheckinJaRealizadoError()
 
             pendente = next((a for a in agendamentos if a.status in STATUS_ELEGIVEIS_CHECKIN), None)
+
+            if not paciente.empresa_ativa:
+                self._log(
+                    TipoOperacao.CRIACAO_AGENDAMENTO,
+                    False,
+                    "Empresa inativa",
+                    cpf,
+                    tipo,
+                    paciente_id=paciente.id_sgg,
+                    agenda_id=pendente.agenda_id_sgg if pendente else None,
+                )
+                raise EmpresaInativaError()
 
             destino, numero_guiche = self._resolver_guiche(guiches, tipo, agora.date())
             if destino is None:
