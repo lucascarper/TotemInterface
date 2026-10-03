@@ -14,8 +14,10 @@ Regras:
     2) Normal vai para o guichê com menos gente "Aguardando" agora (consulta ao vivo no
        SGG); em caso de empate, alterna com quem foi usado por último (round-robin).
     3) Com um único guichê configurado, todo mundo vai para ele, sem distribuição.
-- Se o paciente só tem vínculos em empresas inativas no SGG, recusa com EMPRESA_INATIVA antes
-  de criar qualquer registro (o gateway já prefere o vínculo de uma empresa ativa).
+- O registro do guichê usa o mesmo funcionário e a mesma empresa do agendamento encontrado nas
+  agendas de consultório (sem agendamento, o vínculo preferido do CPF).
+- Se essa empresa está inativa no SGG, recusa com EMPRESA_INATIVA antes de criar qualquer
+  registro (o gateway já prefere, entre os vínculos do CPF, o de uma empresa ativa).
 - Toda operação é registrada para auditoria.
 - Atendimento Preferencial ganha um marcador `[PREFERENCIAL]` no início da observação
   enviada ao SGG (veja `_observacao`), para se destacar em qualquer lista dentro do SGG.
@@ -30,7 +32,9 @@ from app.application.use_cases._agendamentos import (
     STATUS_ELEGIVEIS_CHECKIN,
     STATUS_JA_EM_FILA,
     agendas_consultadas,
+    empresa_ativa,
     listar_agendamentos_do_dia,
+    paciente_do_agendamento,
 )
 from app.domain.entities import (
     Agendamento,
@@ -75,7 +79,7 @@ class RealizarCheckinUseCase:
                 agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
             busca_ids = agendas_consultadas(configs, guiches)
-            agendamentos = listar_agendamentos_do_dia(self._sgg, paciente.id_sgg, busca_ids, agora)
+            agendamentos = listar_agendamentos_do_dia(self._sgg, paciente, busca_ids, agora)
 
             em_fila = next((a for a in agendamentos if a.status in STATUS_JA_EM_FILA), None)
             if em_fila:
@@ -85,7 +89,7 @@ class RealizarCheckinUseCase:
                     "Check-in já realizado",
                     cpf,
                     tipo,
-                    paciente_id=paciente.id_sgg,
+                    paciente_id=em_fila.paciente_id_sgg,
                     agendamento_id=em_fila.id_sgg,
                     agenda_id=em_fila.agenda_id_sgg,
                 )
@@ -93,14 +97,16 @@ class RealizarCheckinUseCase:
 
             pendente = next((a for a in agendamentos if a.status in STATUS_ELEGIVEIS_CHECKIN), None)
 
-            if not paciente.empresa_ativa:
+            # O registro do guichê nasce no mesmo funcionário/empresa do agendamento encontrado.
+            alvo = paciente_do_agendamento(paciente, pendente)
+            if not empresa_ativa(self._sgg, alvo):
                 self._log(
                     TipoOperacao.CRIACAO_AGENDAMENTO,
                     False,
                     "Empresa inativa",
                     cpf,
                     tipo,
-                    paciente_id=paciente.id_sgg,
+                    paciente_id=alvo.id_sgg,
                     agenda_id=pendente.agenda_id_sgg if pendente else None,
                 )
                 raise EmpresaInativaError()
@@ -113,14 +119,14 @@ class RealizarCheckinUseCase:
                     "Nenhum guichê configurado",
                     cpf,
                     tipo,
-                    paciente_id=paciente.id_sgg,
+                    paciente_id=alvo.id_sgg,
                     agenda_id=pendente.agenda_id_sgg if pendente else None,
                 )
                 raise AgendaEncaixeNaoConfiguradaError()
 
             observacao = self._observacao(pendente, agendas, tipo, agora)
             criado = self._sgg.criar_agendamento(
-                paciente=paciente,
+                paciente=alvo,
                 agenda_id_sgg=destino,
                 data_hora=agora,
                 tipo_atendimento=tipo,
@@ -149,7 +155,7 @@ class RealizarCheckinUseCase:
                 "Agendamento confirmado na fila" if pendente else "Encaixe criado",
                 cpf,
                 tipo,
-                paciente_id=paciente.id_sgg,
+                paciente_id=alvo.id_sgg,
                 agendamento_id=criado.id_sgg,
                 agenda_id=destino,
             )

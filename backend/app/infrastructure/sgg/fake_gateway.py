@@ -26,6 +26,9 @@ from app.domain.entities import (
 from app.domain.exceptions import SggOperacaoRecusadaError
 from app.infrastructure.clock import TZ
 
+# Única empresa inativa do fake: o paciente P4 só tem vínculo com ela.
+EMPRESA_INATIVA = "E9"
+
 
 class SggFakeGateway:
     def __init__(self, hoje: date | None = None) -> None:
@@ -65,14 +68,18 @@ class SggFakeGateway:
                 Cpf("86288366757"),
                 "1982-02-14",
                 None,
-                "E9",
-                empresa_ativa=False,
+                EMPRESA_INATIVA,
             ),
         }
         d = hoje or datetime.now(TZ).date()
         self._agendamentos: dict[str, Agendamento] = {
             "AG1": Agendamento(
-                "AG1", "P1", "A1", datetime.combine(d, time(9, 30), TZ), StatusAgendamento.AGENDADO
+                "AG1",
+                "P1",
+                "A1",
+                datetime.combine(d, time(9, 30), TZ),
+                StatusAgendamento.AGENDADO,
+                empresa_id_sgg="E1",
             ),
             "AG2": Agendamento(
                 "AG2",
@@ -80,6 +87,7 @@ class SggFakeGateway:
                 "A2",
                 datetime.combine(d, time(10, 0), TZ),
                 StatusAgendamento.AGUARDANDO,
+                empresa_id_sgg="E2",
             ),
         }
 
@@ -102,6 +110,9 @@ class SggFakeGateway:
 
     def buscar_paciente_por_cpf(self, cpf: Cpf) -> Paciente | None:
         return self._pacientes.get(cpf.digitos)
+
+    def empresa_ativa(self, empresa_id_sgg: str) -> bool:
+        return empresa_id_sgg != EMPRESA_INATIVA
 
     def listar_agendamentos(self, paciente_id_sgg, agenda_ids_sgg, data) -> list[Agendamento]:
         return [
@@ -132,6 +143,7 @@ class SggFakeGateway:
         novo_id = self._criar(paciente.id_sgg, agenda_id_sgg, data_hora)
         ag = self._agendamentos[novo_id]
         ag.tipo_atendimento, ag.observacao = tipo_atendimento, observacao
+        ag.empresa_id_sgg = paciente.empresa_id_sgg
         return ag
 
     def _criar(self, funcionario_id, agenda_id_sgg, data_hora) -> str:
@@ -163,3 +175,19 @@ class SggFakeGateway:
 
     def obter_agendamento(self, id_sgg: str) -> Agendamento | None:
         return self._agendamentos.get(id_sgg)
+
+    # --- preparação de cenários (testes / demonstração) -----------------------
+    def ids_agendamentos(self) -> set[str]:
+        return set(self._agendamentos)
+
+    def adicionar_vinculo(self, cpf_digitos: str, id_funcionario: str, empresa_id: str) -> None:
+        """O CPF passa a ter mais um vínculo (funcionário em outra empresa)."""
+        p = self._pacientes[cpf_digitos]
+        p.vinculos = {**(p.vinculos or {p.id_sgg: p.empresa_id_sgg}), id_funcionario: empresa_id}
+
+    def reatribuir_agendamento(
+        self, id_sgg: str, id_funcionario: str, empresa_id: str | None
+    ) -> None:
+        """Move um agendamento existente para outro vínculo/empresa do paciente."""
+        ag = self._agendamentos[id_sgg]
+        ag.paciente_id_sgg, ag.empresa_id_sgg = id_funcionario, empresa_id
