@@ -1,7 +1,7 @@
 """Testa o adaptador HTTP contra o contrato real do SGG usando transporte falso."""
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 import httpx
 import pytest
@@ -194,6 +194,44 @@ def test_paciente_por_cpf_empresa_inexistente_ou_sem_id_conta_como_inativa():
     handler = sgg_com_vinculos([vinculo("1", "10"), vinculo("2", "")], {})
     p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
     assert p is not None and p.empresa_ativa is False
+
+
+def test_paciente_por_cpf_traz_todos_os_vinculos():
+    handler = sgg_com_vinculos(
+        [vinculo("1", "10"), vinculo("2", "20"), vinculo("3", "")],
+        {"10": "inativa", "20": "ativa"},
+    )
+    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.id_sgg == "2"
+    assert p.vinculos == {"1": "10", "2": "20", "3": None}
+    assert p.ids_vinculos == ("1", "2", "3")
+
+
+def test_agendamento_traz_a_empresa_em_que_foi_marcado():
+    def handler(req):
+        if req.url.path.endswith("/agenda/"):
+            return httpx.Response(200, json=ok(AGENDAS))
+        return httpx.Response(
+            200,
+            json=ok(
+                [
+                    {
+                        "id_agendamento": "9",
+                        "id_funcionario": "2",
+                        "id_empresa": "20",
+                        "agenda": "Consultorio 1",
+                        "data_agendamento": "2026-09-17",
+                        "hora_agendamento": "09:30",
+                        "situacao": "Agendado",
+                    }
+                ]
+            ),
+        )
+
+    gw = gateway(handler)
+    gw.listar_agendas()  # carrega o mapa nome -> id usado para ler os agendamentos
+    ags = gw.listar_agendamentos("2", ["63"], date(2026, 9, 17))
+    assert [(a.paciente_id_sgg, a.empresa_id_sgg) for a in ags] == [("2", "20")]
 
 
 def test_paciente_por_cpf_consulta_cada_empresa_uma_vez_e_para_na_primeira_ativa():

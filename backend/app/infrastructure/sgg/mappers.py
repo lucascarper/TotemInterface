@@ -115,7 +115,9 @@ def to_local(d: dict) -> LocalAtendimento:
     )
 
 
-def to_paciente(d: dict, empresa_ativa: bool = True) -> Paciente:
+def to_paciente(
+    d: dict, empresa_ativa: bool = True, vinculos: dict[str, str | None] | None = None
+) -> Paciente:
     return Paciente(
         id_sgg=str(d.get("id_funcionario")),
         nome=str(d.get("nome", "")).strip(),
@@ -124,6 +126,7 @@ def to_paciente(d: dict, empresa_ativa: bool = True) -> Paciente:
         telefone=_texto(d.get("fone_celular")) or _texto(d.get("fone_comercial")),
         empresa_id_sgg=_texto(d.get("id_empresa")),
         empresa_ativa=empresa_ativa,
+        vinculos=vinculos or {},
     )
 
 
@@ -156,4 +159,5 @@ def to_agendamento(d: dict, agenda_id_sgg: str) -> Agendamento:
         status=status_from_sgg(d.get("situacao")),
         tipo_atendimento=tipo,
         observacao=obs,
+        empresa_id_sgg=_texto(d.get("id_empresa")),
     )

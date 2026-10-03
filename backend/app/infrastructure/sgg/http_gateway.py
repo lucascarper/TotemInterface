@@ -179,16 +179,20 @@ class SggHttpGateway:
         itens.sort(key=lambda i: str(i.get("situacao")) != "Ativo")
         # Só vale um vínculo cuja EMPRESA esteja ativa; se nenhum servir, devolvemos o
         # preferido marcado como inativo para o check-in recusar com "Empresa inativa".
+        vinculos = {
+            str(i.get("id_funcionario")): (str(i["id_empresa"]) if i.get("id_empresa") else None)
+            for i in itens
+        }
         status_empresa: dict[str, bool] = {}
         for item in itens:
             empresa_id = str(item.get("id_empresa") or "")
             if empresa_id not in status_empresa:
-                status_empresa[empresa_id] = bool(empresa_id) and self._empresa_ativa(empresa_id)
+                status_empresa[empresa_id] = bool(empresa_id) and self.empresa_ativa(empresa_id)
             if status_empresa[empresa_id]:
-                return mappers.to_paciente(item, empresa_ativa=True)
-        return mappers.to_paciente(itens[0], empresa_ativa=False)
+                return mappers.to_paciente(item, empresa_ativa=True, vinculos=vinculos)
+        return mappers.to_paciente(itens[0], empresa_ativa=False, vinculos=vinculos)
 
-    def _empresa_ativa(self, empresa_id: str) -> bool:
+    def empresa_ativa(self, empresa_id: str) -> bool:
         # O filtro é `codigo`; `id_empresa` é ignorado pela API e devolveria todas as empresas.
         for empresa in self._consultar("empresa/", {"codigo": empresa_id}):
             if str(empresa.get("id_empresa")) == empresa_id:

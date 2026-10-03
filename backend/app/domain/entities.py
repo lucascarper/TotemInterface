@@ -112,6 +112,17 @@ class Paciente:
     empresa_id_sgg: str | None = None  # exigido pelo SGG ao criar agendamento
     # Falso quando nenhum vínculo do CPF pertence a uma empresa ativa no SGG.
     empresa_ativa: bool = True
+    # Todos os vínculos do CPF: id do funcionário -> id da empresa (um por empresa).
+    vinculos: dict[str, str | None] = field(default_factory=dict)
+
+    @property
+    def ids_vinculos(self) -> tuple[str, ...]:
+        return tuple(self.vinculos) or (self.id_sgg,)
+
+    def empresa_do_vinculo(self, id_funcionario: str) -> str | None:
+        if id_funcionario in self.vinculos:
+            return self.vinculos[id_funcionario]
+        return self.empresa_id_sgg if id_funcionario == self.id_sgg else None
 
     @property
     def nome_publico(self) -> str:
@@ -138,6 +149,7 @@ class Agendamento:
     status: StatusAgendamento
     tipo_atendimento: TipoAtendimento | None = None
     observacao: str | None = None
+    empresa_id_sgg: str | None = None
 
 
 @dataclass(slots=True)

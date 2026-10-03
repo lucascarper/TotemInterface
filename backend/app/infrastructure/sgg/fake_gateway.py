@@ -72,7 +72,12 @@ class SggFakeGateway:
         d = hoje or datetime.now(TZ).date()
         self._agendamentos: dict[str, Agendamento] = {
             "AG1": Agendamento(
-                "AG1", "P1", "A1", datetime.combine(d, time(9, 30), TZ), StatusAgendamento.AGENDADO
+                "AG1",
+                "P1",
+                "A1",
+                datetime.combine(d, time(9, 30), TZ),
+                StatusAgendamento.AGENDADO,
+                empresa_id_sgg="E1",
             ),
             "AG2": Agendamento(
                 "AG2",
@@ -80,6 +85,7 @@ class SggFakeGateway:
                 "A2",
                 datetime.combine(d, time(10, 0), TZ),
                 StatusAgendamento.AGUARDANDO,
+                empresa_id_sgg="E2",
             ),
         }
 
@@ -102,6 +108,9 @@ class SggFakeGateway:
 
     def buscar_paciente_por_cpf(self, cpf: Cpf) -> Paciente | None:
         return self._pacientes.get(cpf.digitos)
+
+    def empresa_ativa(self, empresa_id_sgg: str) -> bool:
+        return empresa_id_sgg not in {"E9"}
 
     def listar_agendamentos(self, paciente_id_sgg, agenda_ids_sgg, data) -> list[Agendamento]:
         return [
@@ -132,6 +141,7 @@ class SggFakeGateway:
         novo_id = self._criar(paciente.id_sgg, agenda_id_sgg, data_hora)
         ag = self._agendamentos[novo_id]
         ag.tipo_atendimento, ag.observacao = tipo_atendimento, observacao
+        ag.empresa_id_sgg = paciente.empresa_id_sgg
         return ag
 
     def _criar(self, funcionario_id, agenda_id_sgg, data_hora) -> str:

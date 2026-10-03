@@ -27,6 +27,10 @@ class SggGateway(Protocol):
 
     def buscar_paciente_por_cpf(self, cpf: Cpf) -> Paciente | None: ...
 
+    def empresa_ativa(self, empresa_id_sgg: str) -> bool:
+        """Empresa existe e está ativa no SGG (inexistente conta como inativa)."""
+        ...
+
     def listar_agendamentos(
         self, paciente_id_sgg: str, agenda_ids_sgg: list[str], data: date
     ) -> list[Agendamento]: ...

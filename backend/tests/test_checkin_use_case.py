@@ -47,6 +47,8 @@ def test_checkin_confirma_agendamento_criando_registro_no_guiche(container_confi
     assert criado.observacao == (
         "Chegada via totem 08:15 - agendado 09:30 em Clínico Geral - Dr. Roberto"
     )
+    # Mesma empresa e funcionário do agendamento original.
+    assert criado.empresa_id_sgg == "E1" and criado.paciente_id_sgg == "P1"
 
 
 def test_checkin_preferencial_marca_observacao_com_prefixo(container_configurado, sgg):
@@ -65,6 +67,41 @@ def test_checkin_cria_encaixe_quando_nao_ha_agendamento(container_configurado, s
     assert criado.tipo_atendimento == TipoAtendimento.PREFERENCIAL
     assert dto.agenda_nome == "Recepção"
     assert criado.observacao == "[PREFERENCIAL] Encaixe via totem 08:15"
+    assert criado.empresa_id_sgg == "E1"  # sem agendamento: vínculo preferido do paciente
+
+
+def vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento="E7"):
+    """Maria passa a ter dois vínculos; o agendamento AG1 está no que NÃO é o preferido."""
+    sgg._pacientes[MARIA].vinculos = {"P1": "E1", "P1b": "E7"}
+    sgg._agendamentos["AG1"].paciente_id_sgg = "P1b"
+    sgg._agendamentos["AG1"].empresa_id_sgg = empresa_do_agendamento
+
+
+def test_checkin_usa_empresa_e_vinculo_do_agendamento_encontrado(container_configurado, sgg):
+    vincular_agendamento_a_outra_empresa(sgg)
+    dto = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+
+    assert dto.resultado == ResultadoCheckin.AGENDAMENTO_CONFIRMADO
+    criado = sgg.obter_agendamento(dto.agendamento_id_sgg)
+    assert criado.empresa_id_sgg == "E7" and criado.paciente_id_sgg == "P1b"
+
+
+def test_checkin_deduz_empresa_pelo_vinculo_quando_agendamento_nao_traz(
+    container_configurado, sgg
+):
+    vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento=None)
+    dto = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+
+    criado = sgg.obter_agendamento(dto.agendamento_id_sgg)
+    assert criado.empresa_id_sgg == "E7" and criado.paciente_id_sgg == "P1b"
+
+
+def test_checkin_recusa_quando_empresa_do_agendamento_esta_inativa(container_configurado, sgg):
+    vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento="E9")
+    antes = set(sgg._agendamentos)
+    with pytest.raises(EmpresaInativaError):
+        container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    assert set(sgg._agendamentos) == antes
 
 
 def test_checkin_recusa_empresa_inativa_sem_criar_registro(container_configurado, sgg):

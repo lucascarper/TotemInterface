@@ -38,7 +38,7 @@ class IdentificarPacienteUseCase:
             agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
         agendamento = localizar_agendamento_do_dia(
-            self._sgg, paciente.id_sgg, monitoradas, self._clock.agora()
+            self._sgg, paciente, monitoradas, self._clock.agora()
         )
 
         self._log(

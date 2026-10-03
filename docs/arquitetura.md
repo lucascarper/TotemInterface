@@ -37,8 +37,13 @@ Regras que valem a pena conhecer:
   `409 CHECKIN_JA_REALIZADO` (não duplica).
 * Nenhum guichê configurado → `409 ENCAIXE_NAO_CONFIGURADO`, mesmo havendo agendamento — pelo
   menos o Guichê 1 é sempre obrigatório agora.
-* Empresa do paciente inativa no SGG (e nenhum outro vínculo do CPF numa empresa ativa) →
-  `409 EMPRESA_INATIVA`, sem criar nada no guichê. Veja o vínculo no adaptador do SGG abaixo.
+* O registro do guichê nasce **no mesmo funcionário e na mesma empresa do agendamento encontrado**
+  nas agendas de consultório (o agendamento traz `id_funcionario` e `id_empresa`). A busca do
+  agendamento do dia cobre todos os vínculos do CPF, não só o preferido. Sem agendamento
+  (encaixe), vale o vínculo preferido.
+* Empresa que será usada inativa no SGG (e, sem agendamento, nenhum outro vínculo do CPF numa
+  empresa ativa) → `409 EMPRESA_INATIVA`, sem criar nada no guichê. Veja o vínculo no adaptador
+  do SGG abaixo.
 * Paciente inexistente → `404 PACIENTE_NAO_ENCONTRADO` com orientação para a recepção (RF10).
 * Toda operação grava `logs_operacao` com o **CPF mascarado** (auditabilidade + privacidade).
 

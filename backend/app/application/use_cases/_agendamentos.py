@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from app.domain.entities import Agendamento, StatusAgendamento
+from app.domain.entities import Agendamento, Paciente, StatusAgendamento
 from app.domain.ports import SggGateway
 
 STATUS_ELEGIVEIS_CHECKIN = {StatusAgendamento.AGENDADO}
@@ -24,19 +24,27 @@ def agendas_consultadas(configs, guiches) -> list[str]:
 
 
 def listar_agendamentos_do_dia(
-    sgg: SggGateway, paciente_id_sgg: str, agenda_ids: list[str], agora: datetime
+    sgg: SggGateway, paciente: Paciente, agenda_ids: list[str], agora: datetime
 ) -> list[Agendamento]:
+    """Agendamentos do dia em qualquer vínculo (empresa) do CPF.
+
+    O agendamento fica preso ao funcionário da empresa em que foi marcado, que nem sempre é
+    o vínculo que o gateway considera o preferido; por isso busca em todos.
+    """
     if not agenda_ids:
         return []
-    itens = sgg.listar_agendamentos(paciente_id_sgg, agenda_ids, agora.date())
-    return sorted(itens, key=lambda a: a.data_hora)
+    itens: dict[str, Agendamento] = {}
+    for id_funcionario in paciente.ids_vinculos:
+        for a in sgg.listar_agendamentos(id_funcionario, agenda_ids, agora.date()):
+            itens[a.id_sgg] = a
+    return sorted(itens.values(), key=lambda a: a.data_hora)
 
 
 def localizar_agendamento_do_dia(
-    sgg: SggGateway, paciente_id_sgg: str, agenda_ids: list[str], agora: datetime
+    sgg: SggGateway, paciente: Paciente, agenda_ids: list[str], agora: datetime
 ) -> Agendamento | None:
     """Primeiro agendamento do dia ainda pendente (AGENDADO) ou já em fila."""
-    for a in listar_agendamentos_do_dia(sgg, paciente_id_sgg, agenda_ids, agora):
+    for a in listar_agendamentos_do_dia(sgg, paciente, agenda_ids, agora):
         if a.status in STATUS_ELEGIVEIS_CHECKIN | STATUS_JA_EM_FILA:
             return a
     return None

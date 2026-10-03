@@ -14,8 +14,10 @@ Regras:
     2) Normal vai para o guichê com menos gente "Aguardando" agora (consulta ao vivo no
        SGG); em caso de empate, alterna com quem foi usado por último (round-robin).
     3) Com um único guichê configurado, todo mundo vai para ele, sem distribuição.
-- Se o paciente só tem vínculos em empresas inativas no SGG, recusa com EMPRESA_INATIVA antes
-  de criar qualquer registro (o gateway já prefere o vínculo de uma empresa ativa).
+- O registro do guichê usa o mesmo funcionário e a mesma empresa do agendamento encontrado nas
+  agendas de consultório (sem agendamento, o vínculo preferido do CPF).
+- Se essa empresa está inativa no SGG, recusa com EMPRESA_INATIVA antes de criar qualquer
+  registro (o gateway já prefere, entre os vínculos do CPF, o de uma empresa ativa).
 - Toda operação é registrada para auditoria.
 - Atendimento Preferencial ganha um marcador `[PREFERENCIAL]` no início da observação
   enviada ao SGG (veja `_observacao`), para se destacar em qualquer lista dentro do SGG.
@@ -23,6 +25,7 @@ Regras:
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime
 
 from app.application.dto import CheckinDTO
@@ -37,6 +40,7 @@ from app.domain.entities import (
     ConfiguracaoGuiches,
     Cpf,
     LogOperacao,
+    Paciente,
     ResultadoCheckin,
     StatusAgendamento,
     TipoAtendimento,
@@ -75,7 +79,7 @@ class RealizarCheckinUseCase:
                 agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
             busca_ids = agendas_consultadas(configs, guiches)
-            agendamentos = listar_agendamentos_do_dia(self._sgg, paciente.id_sgg, busca_ids, agora)
+            agendamentos = listar_agendamentos_do_dia(self._sgg, paciente, busca_ids, agora)
 
             em_fila = next((a for a in agendamentos if a.status in STATUS_JA_EM_FILA), None)
             if em_fila:
@@ -93,14 +97,16 @@ class RealizarCheckinUseCase:
 
             pendente = next((a for a in agendamentos if a.status in STATUS_ELEGIVEIS_CHECKIN), None)
 
-            if not paciente.empresa_ativa:
+            # O registro do guichê nasce no mesmo funcionário/empresa do agendamento encontrado.
+            alvo = self._paciente_do_agendamento(paciente, pendente)
+            if not self._empresa_ativa(paciente, alvo):
                 self._log(
                     TipoOperacao.CRIACAO_AGENDAMENTO,
                     False,
                     "Empresa inativa",
                     cpf,
                     tipo,
-                    paciente_id=paciente.id_sgg,
+                    paciente_id=alvo.id_sgg,
                     agenda_id=pendente.agenda_id_sgg if pendente else None,
                 )
                 raise EmpresaInativaError()
@@ -113,14 +119,14 @@ class RealizarCheckinUseCase:
                     "Nenhum guichê configurado",
                     cpf,
                     tipo,
-                    paciente_id=paciente.id_sgg,
+                    paciente_id=alvo.id_sgg,
                     agenda_id=pendente.agenda_id_sgg if pendente else None,
                 )
                 raise AgendaEncaixeNaoConfiguradaError()
 
             observacao = self._observacao(pendente, agendas, tipo, agora)
             criado = self._sgg.criar_agendamento(
-                paciente=paciente,
+                paciente=alvo,
                 agenda_id_sgg=destino,
                 data_hora=agora,
                 tipo_atendimento=tipo,
@@ -149,7 +155,7 @@ class RealizarCheckinUseCase:
                 "Agendamento confirmado na fila" if pendente else "Encaixe criado",
                 cpf,
                 tipo,
-                paciente_id=paciente.id_sgg,
+                paciente_id=alvo.id_sgg,
                 agendamento_id=criado.id_sgg,
                 agenda_id=destino,
             )
@@ -236,6 +242,25 @@ class RealizarCheckinUseCase:
             f"{prefixo}Chegada via totem {hora_chegada} - agendado "
             f"{pendente.data_hora:%H:%M} em {origem}"
         )
+
+    @staticmethod
+    def _paciente_do_agendamento(paciente: Paciente, pendente: Agendamento | None) -> Paciente:
+        """Funcionário e empresa em que o registro do guichê deve ser criado.
+
+        Havendo agendamento no consultório, vale o dele (um CPF pode ter vínculos em várias
+        empresas e o agendamento está preso a uma delas). Sem agendamento, o vínculo preferido.
+        """
+        if pendente is None:
+            return paciente
+        empresa = pendente.empresa_id_sgg or paciente.empresa_do_vinculo(pendente.paciente_id_sgg)
+        return replace(paciente, id_sgg=pendente.paciente_id_sgg, empresa_id_sgg=empresa)
+
+    def _empresa_ativa(self, paciente: Paciente, alvo: Paciente) -> bool:
+        if not alvo.empresa_id_sgg:
+            return False
+        if alvo.empresa_id_sgg == paciente.empresa_id_sgg:
+            return paciente.empresa_ativa  # já verificado ao buscar o paciente
+        return self._sgg.empresa_ativa(alvo.empresa_id_sgg)
 
     @staticmethod
     def _nome_agenda(agendas, agenda_id: str) -> str:
