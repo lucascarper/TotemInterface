@@ -58,12 +58,17 @@ Particularidades verificadas contra a API real:
 * Escritas devolvem `returnInfo` como *string JSON* com `{codigo,msg}` ou `{erro,msg}`; recusa vira `SggOperacaoRecusadaError` (HTTP 409 para o totem, que orienta o paciente à recepção).
 * Agendamentos referenciam a agenda pelo nome; o gateway mantém um mapa nome ⇄ id, renovado a cada sincronização.
 * Um CPF pode ter vários vínculos (`funcionario/`), um por empresa, inclusive empresas antigas já
-  inativas. `buscar_paciente_por_cpf` consulta `empresa/` (filtro `codigo`; o filtro `id_empresa`
-  é ignorado e devolveria as ~2.300 empresas) e devolve o primeiro vínculo cuja empresa tem
-  `situacao` = `ativa` (preferindo funcionário `Ativo` e o editado mais recentemente). Se nenhum
-  serve, devolve o preferido com `empresa_ativa=False` e o check-in recusa. Empresa inexistente,
-  sem `id_empresa` ou qualquer valor diferente de `ativa` conta como inativa. Custo: uma consulta
-  extra a `empresa/` por empresa distinta, parando na primeira ativa.
+  inativas. `buscar_paciente_por_cpf` devolve o vínculo preferido (cuja empresa esteja ativa,
+  depois funcionário `Ativo` e o editado mais recentemente) junto com o mapa de todos os vínculos
+  (`Paciente.vinculos`). Quem decide se a empresa **usada** está ativa é o caso de uso, pela porta
+  `empresa_ativa(id)`: consulta `empresa/` com o filtro `codigo` (o filtro `id_empresa` é
+  ignorado e devolveria as ~2.300 empresas) e vale `situacao` = `ativa`; inexistente, sem
+  `id_empresa` ou qualquer outro valor conta como inativa. O resultado fica em cache por 5 minutos
+  (`TTL_EMPRESA_SEGUNDOS`; falhas não entram no cache), pois a identificação e o check-in
+  consultam as mesmas empresas e o SGG limita requisições.
+* A busca do agendamento do dia roda em paralelo, uma consulta por vínculo do CPF. A identificação
+  já avisa `EMPRESA_INATIVA` antes de o paciente confirmar; quem já está na fila segue para
+  "chegada já registrada".
 * `POST /agendamento/` exige `id_empresa`, por isso `Paciente` carrega `empresa_id_sgg`.
 * Agendas por hora marcada exigem `hora_agendamento` alinhada à grade; o gateway arredonda para o próximo múltiplo da duração padrão. Agendas por ordem de chegada não recebem hora (recomendadas como encaixe).
 * HTTP 429 (limite de requisições) e códigos `A*`/`S*` viram `SggIndisponivelError` (HTTP 503), sem travar o totem.

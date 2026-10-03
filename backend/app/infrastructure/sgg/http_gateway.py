@@ -18,6 +18,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 from datetime import date, datetime, timedelta
 
 import httpx
@@ -43,6 +45,9 @@ STATUS_OK = "D000"
 STATUS_VAZIO = "D001"
 TAMANHO_PAGINA = 100
 MAX_PAGINAS = 50
+# A situação de uma empresa muda raramente; o totem consulta a mesma a cada identificação e
+# check-in, e o SGG limita requisições (429), então guardamos o resultado por alguns minutos.
+TTL_EMPRESA_SEGUNDOS = 300
 
 
 class SggHttpGateway:
@@ -62,6 +67,8 @@ class SggHttpGateway:
         )
         self._agenda_por_nome: dict[str, Agenda] = {}
         self._agenda_por_id: dict[str, Agenda] = {}
+        self._empresas: dict[str, tuple[float, bool]] = {}
+        self._empresas_lock = threading.Lock()
 
     # ------------------------------------------------------------------ infra
     def _request(self, method: str, path: str, body: dict) -> dict:
@@ -177,22 +184,31 @@ class SggHttpGateway:
         # mais recentemente (duas passadas porque o sort estável não inverte só uma chave).
         itens.sort(key=lambda i: str(i.get("data_hora_edicao", "")), reverse=True)
         itens.sort(key=lambda i: str(i.get("situacao")) != "Ativo")
-        # Só vale um vínculo cuja EMPRESA esteja ativa; se nenhum servir, devolvemos o
-        # preferido marcado como inativo para o check-in recusar com "Empresa inativa".
         vinculos = {
             str(i.get("id_funcionario")): (str(i["id_empresa"]) if i.get("id_empresa") else None)
             for i in itens
         }
-        status_empresa: dict[str, bool] = {}
-        for item in itens:
-            empresa_id = str(item.get("id_empresa") or "")
-            if empresa_id not in status_empresa:
-                status_empresa[empresa_id] = bool(empresa_id) and self.empresa_ativa(empresa_id)
-            if status_empresa[empresa_id]:
-                return mappers.to_paciente(item, empresa_ativa=True, vinculos=vinculos)
-        return mappers.to_paciente(itens[0], empresa_ativa=False, vinculos=vinculos)
+        # Preferimos o vínculo cuja EMPRESA esteja ativa (para o dado exibido e como padrão no
+        # encaixe). Se nenhum serve, devolvemos o preferido: quem cria o registro decide pela
+        # empresa que de fato vai usar (ver `empresa_ativa`).
+        escolhido = next(
+            (i for i in itens if i.get("id_empresa") and self.empresa_ativa(str(i["id_empresa"]))),
+            itens[0],
+        )
+        return mappers.to_paciente(escolhido, vinculos=vinculos)
 
     def empresa_ativa(self, empresa_id: str) -> bool:
+        agora = time.monotonic()
+        with self._empresas_lock:
+            guardado = self._empresas.get(empresa_id)
+        if guardado and agora - guardado[0] < TTL_EMPRESA_SEGUNDOS:
+            return guardado[1]
+        ativa = self._consultar_empresa_ativa(empresa_id)  # falhas não entram no cache
+        with self._empresas_lock:
+            self._empresas[empresa_id] = (agora, ativa)
+        return ativa
+
+    def _consultar_empresa_ativa(self, empresa_id: str) -> bool:
         # O filtro é `codigo`; `id_empresa` é ignorado pela API e devolveria todas as empresas.
         for empresa in self._consultar("empresa/", {"codigo": empresa_id}):
             if str(empresa.get("id_empresa")) == empresa_id:

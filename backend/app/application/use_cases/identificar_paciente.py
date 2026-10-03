@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from app.application.dto import IdentificacaoDTO, PacientePublicoDTO
 from app.application.use_cases._agendamentos import (
+    STATUS_ELEGIVEIS_CHECKIN,
     agendas_consultadas,
+    empresa_ativa,
     localizar_agendamento_do_dia,
+    paciente_do_agendamento,
 )
 from app.domain.entities import Cpf, LogOperacao, TipoOperacao
-from app.domain.exceptions import PacienteNaoEncontradoError, SggIndisponivelError
+from app.domain.exceptions import (
+    EmpresaInativaError,
+    PacienteNaoEncontradoError,
+    SggIndisponivelError,
+)
 from app.domain.ports import Clock, SggGateway, UnitOfWork
 
 
@@ -40,6 +47,21 @@ class IdentificarPacienteUseCase:
         agendamento = localizar_agendamento_do_dia(
             self._sgg, paciente, monitoradas, self._clock.agora()
         )
+
+        # Avisa já aqui (e não depois de o paciente confirmar) quando o check-in seria recusado
+        # por empresa inativa. Registro já na fila segue para o aviso de "chegada já registrada".
+        if agendamento is None or agendamento.status in STATUS_ELEGIVEIS_CHECKIN:
+            alvo = paciente_do_agendamento(paciente, agendamento)
+            if not empresa_ativa(self._sgg, alvo):
+                self._log(
+                    TipoOperacao.BUSCA_PACIENTE,
+                    False,
+                    "Empresa inativa",
+                    cpf,
+                    paciente_id=alvo.id_sgg,
+                    agendamento_id=agendamento.id_sgg if agendamento else None,
+                )
+                raise EmpresaInativaError()
 
         self._log(
             TipoOperacao.BUSCA_PACIENTE,

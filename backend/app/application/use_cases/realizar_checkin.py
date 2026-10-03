@@ -25,7 +25,6 @@ Regras:
 
 from __future__ import annotations
 
-from dataclasses import replace
 from datetime import date, datetime
 
 from app.application.dto import CheckinDTO
@@ -33,14 +32,15 @@ from app.application.use_cases._agendamentos import (
     STATUS_ELEGIVEIS_CHECKIN,
     STATUS_JA_EM_FILA,
     agendas_consultadas,
+    empresa_ativa,
     listar_agendamentos_do_dia,
+    paciente_do_agendamento,
 )
 from app.domain.entities import (
     Agendamento,
     ConfiguracaoGuiches,
     Cpf,
     LogOperacao,
-    Paciente,
     ResultadoCheckin,
     StatusAgendamento,
     TipoAtendimento,
@@ -89,7 +89,7 @@ class RealizarCheckinUseCase:
                     "Check-in já realizado",
                     cpf,
                     tipo,
-                    paciente_id=paciente.id_sgg,
+                    paciente_id=em_fila.paciente_id_sgg,
                     agendamento_id=em_fila.id_sgg,
                     agenda_id=em_fila.agenda_id_sgg,
                 )
@@ -98,8 +98,8 @@ class RealizarCheckinUseCase:
             pendente = next((a for a in agendamentos if a.status in STATUS_ELEGIVEIS_CHECKIN), None)
 
             # O registro do guichê nasce no mesmo funcionário/empresa do agendamento encontrado.
-            alvo = self._paciente_do_agendamento(paciente, pendente)
-            if not self._empresa_ativa(paciente, alvo):
+            alvo = paciente_do_agendamento(paciente, pendente)
+            if not empresa_ativa(self._sgg, alvo):
                 self._log(
                     TipoOperacao.CRIACAO_AGENDAMENTO,
                     False,
@@ -242,25 +242,6 @@ class RealizarCheckinUseCase:
             f"{prefixo}Chegada via totem {hora_chegada} - agendado "
             f"{pendente.data_hora:%H:%M} em {origem}"
         )
-
-    @staticmethod
-    def _paciente_do_agendamento(paciente: Paciente, pendente: Agendamento | None) -> Paciente:
-        """Funcionário e empresa em que o registro do guichê deve ser criado.
-
-        Havendo agendamento no consultório, vale o dele (um CPF pode ter vínculos em várias
-        empresas e o agendamento está preso a uma delas). Sem agendamento, o vínculo preferido.
-        """
-        if pendente is None:
-            return paciente
-        empresa = pendente.empresa_id_sgg or paciente.empresa_do_vinculo(pendente.paciente_id_sgg)
-        return replace(paciente, id_sgg=pendente.paciente_id_sgg, empresa_id_sgg=empresa)
-
-    def _empresa_ativa(self, paciente: Paciente, alvo: Paciente) -> bool:
-        if not alvo.empresa_id_sgg:
-            return False
-        if alvo.empresa_id_sgg == paciente.empresa_id_sgg:
-            return paciente.empresa_ativa  # já verificado ao buscar o paciente
-        return self._sgg.empresa_ativa(alvo.empresa_id_sgg)
 
     @staticmethod
     def _nome_agenda(agendas, agenda_id: str) -> str:

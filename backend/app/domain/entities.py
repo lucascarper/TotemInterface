@@ -110,8 +110,6 @@ class Paciente:
     data_nascimento: str | None = None  # ISO (YYYY-MM-DD)
     telefone: str | None = None
     empresa_id_sgg: str | None = None  # exigido pelo SGG ao criar agendamento
-    # Falso quando nenhum vínculo do CPF pertence a uma empresa ativa no SGG.
-    empresa_ativa: bool = True
     # Todos os vínculos do CPF: id do funcionário -> id da empresa (um por empresa).
     vinculos: dict[str, str | None] = field(default_factory=dict)
 

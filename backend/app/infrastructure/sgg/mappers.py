@@ -115,9 +115,7 @@ def to_local(d: dict) -> LocalAtendimento:
     )
 
 
-def to_paciente(
-    d: dict, empresa_ativa: bool = True, vinculos: dict[str, str | None] | None = None
-) -> Paciente:
+def to_paciente(d: dict, vinculos: dict[str, str | None] | None = None) -> Paciente:
     return Paciente(
         id_sgg=str(d.get("id_funcionario")),
         nome=str(d.get("nome", "")).strip(),
@@ -125,7 +123,6 @@ def to_paciente(
         data_nascimento=_texto(d.get("data_nascimento")),
         telefone=_texto(d.get("fone_celular")) or _texto(d.get("fone_comercial")),
         empresa_id_sgg=_texto(d.get("id_empresa")),
-        empresa_ativa=empresa_ativa,
         vinculos=vinculos or {},
     )
 

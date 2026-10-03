@@ -72,9 +72,8 @@ def test_checkin_cria_encaixe_quando_nao_ha_agendamento(container_configurado, s
 
 def vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento="E7"):
     """Maria passa a ter dois vínculos; o agendamento AG1 está no que NÃO é o preferido."""
-    sgg._pacientes[MARIA].vinculos = {"P1": "E1", "P1b": "E7"}
-    sgg._agendamentos["AG1"].paciente_id_sgg = "P1b"
-    sgg._agendamentos["AG1"].empresa_id_sgg = empresa_do_agendamento
+    sgg.adicionar_vinculo(MARIA, "P1b", "E7")
+    sgg.reatribuir_agendamento("AG1", "P1b", empresa_do_agendamento)
 
 
 def test_checkin_usa_empresa_e_vinculo_do_agendamento_encontrado(container_configurado, sgg):
@@ -86,9 +85,7 @@ def test_checkin_usa_empresa_e_vinculo_do_agendamento_encontrado(container_confi
     assert criado.empresa_id_sgg == "E7" and criado.paciente_id_sgg == "P1b"
 
 
-def test_checkin_deduz_empresa_pelo_vinculo_quando_agendamento_nao_traz(
-    container_configurado, sgg
-):
+def test_checkin_deduz_empresa_pelo_vinculo_quando_agendamento_nao_traz(container_configurado, sgg):
     vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento=None)
     dto = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
 
@@ -98,19 +95,34 @@ def test_checkin_deduz_empresa_pelo_vinculo_quando_agendamento_nao_traz(
 
 def test_checkin_recusa_quando_empresa_do_agendamento_esta_inativa(container_configurado, sgg):
     vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento="E9")
-    antes = set(sgg._agendamentos)
+    antes = sgg.ids_agendamentos()
     with pytest.raises(EmpresaInativaError):
         container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
-    assert set(sgg._agendamentos) == antes
+    assert sgg.ids_agendamentos() == antes
+
+
+def test_checkin_ja_realizado_em_outro_vinculo_nao_duplica_e_audita_o_vinculo_certo(
+    container_configurado, sgg
+):
+    vincular_agendamento_a_outra_empresa(sgg)
+    container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)  # cria no P1b
+    antes = sgg.ids_agendamentos()
+
+    with pytest.raises(CheckinJaRealizadoError):
+        container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+
+    assert sgg.ids_agendamentos() == antes
+    log = container_configurado.listar_logs().executar(1)[0]
+    assert log.mensagem == "Check-in já realizado" and log.paciente_id_sgg == "P1b"
 
 
 def test_checkin_recusa_empresa_inativa_sem_criar_registro(container_configurado, sgg):
-    antes = set(sgg._agendamentos)
+    antes = sgg.ids_agendamentos()
     with pytest.raises(EmpresaInativaError):
         container_configurado.realizar_checkin().executar(
             CARLOS_EMPRESA_INATIVA, TipoAtendimento.NORMAL
         )
-    assert set(sgg._agendamentos) == antes  # nada foi criado no guichê
+    assert sgg.ids_agendamentos() == antes  # nada foi criado no guichê
 
     logs = container_configurado.listar_logs().executar(10)
     assert logs[0].sucesso is False and logs[0].mensagem == "Empresa inativa"
@@ -171,6 +183,33 @@ def test_operacoes_sao_auditadas(container_configurado):
     assert TipoOperacao.CRIACAO_AGENDAMENTO in tipos
     assert all(log.cpf_mascarado != MARIA for log in logs if log.cpf_mascarado)
     assert logs[0].cpf_mascarado == "***.982.247-**"
+
+
+def test_identificar_encontra_agendamento_em_vinculo_nao_preferido(container_configurado, sgg):
+    vincular_agendamento_a_outra_empresa(sgg)
+    dto = container_configurado.identificar_paciente().executar(MARIA)
+    assert dto.possui_agendamento_hoje is True
+    assert dto.agendamento_horario.strftime("%H:%M") == "09:30"
+
+
+def test_identificar_avisa_empresa_inativa_antes_da_confirmacao(container_configurado):
+    with pytest.raises(EmpresaInativaError):
+        container_configurado.identificar_paciente().executar(CARLOS_EMPRESA_INATIVA)
+    log = container_configurado.listar_logs().executar(1)[0]
+    assert log.sucesso is False and log.mensagem == "Empresa inativa"
+
+
+def test_identificar_avisa_quando_empresa_do_agendamento_esta_inativa(container_configurado, sgg):
+    vincular_agendamento_a_outra_empresa(sgg, empresa_do_agendamento="E9")
+    with pytest.raises(EmpresaInativaError):
+        container_configurado.identificar_paciente().executar(MARIA)
+
+
+def test_identificar_registro_ja_na_fila_nao_acusa_empresa_inativa(container_configurado, sgg):
+    """Quem já está na fila vê 'chegada já registrada' no check-in, não um erro de empresa."""
+    sgg.reatribuir_agendamento("AG2", "P3", "E9")  # Ana, AGUARDANDO, em empresa inativa
+    dto = container_configurado.identificar_paciente().executar(ANA)
+    assert dto.possui_agendamento_hoje is True
 
 
 def test_identificar_paciente_informa_agendamento(container_configurado):

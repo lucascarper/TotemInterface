@@ -152,7 +152,6 @@ def test_paciente_por_cpf_prefere_vinculo_ativo():
     p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
     assert p is not None and p.id_sgg == "2" and p.empresa_id_sgg == "20"
     assert p.telefone_mascarado == "(**) *****-1234"
-    assert p.empresa_ativa is True
 
 
 def test_paciente_por_cpf_ignora_vinculo_de_empresa_inativa():
@@ -166,7 +165,6 @@ def test_paciente_por_cpf_ignora_vinculo_de_empresa_inativa():
     )
     p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
     assert p is not None and p.id_sgg == "2" and p.empresa_id_sgg == "20"
-    assert p.empresa_ativa is True
 
 
 def test_paciente_por_cpf_desempata_pelo_vinculo_editado_mais_recentemente():
@@ -181,19 +179,54 @@ def test_paciente_por_cpf_desempata_pelo_vinculo_editado_mais_recentemente():
     assert p is not None and p.id_sgg == "2"
 
 
-def test_paciente_por_cpf_sem_empresa_ativa_vem_marcado_como_inativo():
-    handler = sgg_com_vinculos(
-        [vinculo("1", "10"), vinculo("2", "20")],
-        {"10": "inativa", "20": "inativa"},
+def test_paciente_por_cpf_sem_empresa_ativa_devolve_o_preferido():
+    gw = gateway(
+        sgg_com_vinculos(
+            [vinculo("1", "10"), vinculo("2", "20")],
+            {"10": "inativa", "20": "inativa"},
+        )
     )
-    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
-    assert p is not None and p.empresa_ativa is False
+    p = gw.buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.id_sgg == "1"
+    assert gw.empresa_ativa("10") is False and gw.empresa_ativa("20") is False
 
 
-def test_paciente_por_cpf_empresa_inexistente_ou_sem_id_conta_como_inativa():
-    handler = sgg_com_vinculos([vinculo("1", "10"), vinculo("2", "")], {})
-    p = gateway(handler).buscar_paciente_por_cpf(Cpf("52998224725"))
-    assert p is not None and p.empresa_ativa is False
+def test_empresa_inexistente_conta_como_inativa():
+    gw = gateway(sgg_com_vinculos([vinculo("1", "10")], {}))
+    assert gw.empresa_ativa("10") is False
+    p = gw.buscar_paciente_por_cpf(Cpf("52998224725"))
+    assert p is not None and p.id_sgg == "1"
+
+
+def test_empresa_ativa_usa_cache_e_renova_apos_o_ttl(monkeypatch):
+    from app.infrastructure.sgg import http_gateway as hg
+
+    relogio = [1000.0]
+    monkeypatch.setattr(hg.time, "monotonic", lambda: relogio[0])
+    consultas: list[str] = []
+    gw = gateway(sgg_com_vinculos([], {"10": "ativa"}, consultas))
+
+    assert gw.empresa_ativa("10") and gw.empresa_ativa("10")
+    assert consultas == ["10"]  # a segunda veio do cache
+
+    relogio[0] += hg.TTL_EMPRESA_SEGUNDOS + 1
+    assert gw.empresa_ativa("10")
+    assert consultas == ["10", "10"]
+
+
+def test_falha_na_consulta_de_empresa_nao_entra_no_cache():
+    chamadas = {"n": 0}
+
+    def handler(req):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            return httpx.Response(429)
+        return httpx.Response(200, json=ok([{"id_empresa": "10", "situacao": "ativa"}]))
+
+    gw = gateway(handler)
+    with pytest.raises(SggIndisponivelError):
+        gw.empresa_ativa("10")
+    assert gw.empresa_ativa("10") is True
 
 
 def test_paciente_por_cpf_traz_todos_os_vinculos():
@@ -235,6 +268,7 @@ def test_agendamento_traz_a_empresa_em_que_foi_marcado():
 
 
 def test_paciente_por_cpf_consulta_cada_empresa_uma_vez_e_para_na_primeira_ativa():
+    # (o cache evita repetir a consulta de "10", que aparece em dois vínculos)
     consultas: list[str] = []
     handler = sgg_com_vinculos(
         [
