@@ -33,8 +33,13 @@ Regras que valem a pena conhecer:
   altera o agendamento original (RF08/RF09). O paciente vê o horário/agenda originais na
   confirmação; o guichê é onde a recepção acompanha as chegadas. Veja **Guichês de
   atendimento** abaixo para a regra de distribuição entre os dois.
-* Já existe um registro `AGUARDANDO`/`EM_ATENDIMENTO` hoje (em qualquer guichê) →
-  `409 CHECKIN_JA_REALIZADO` (não duplica).
+* Já existe um registro de chegada hoje que **ainda não foi atendido** (`AGUARDANDO`,
+  `EM_ATENDIMENTO` ou outro status diferente de `ATENDIDO`, no guichê) → `409 CHECKIN_JA_REALIZADO`
+  (não duplica). Registro já `ATENDIDO` não bloqueia: o paciente que sai e volta é atendido de novo.
+* Essa nova chegada vai para um guichê **onde o paciente ainda não tem registro hoje**: o SGG recusa
+  (D16026) dois registros do mesmo paciente na mesma agenda de ordem de chegada no mesmo dia, mesmo
+  com o anterior atendido. O Preferencial, se o Guichê 1 já tiver registro dele, vai para o 2. Se ele
+  já tiver registro nos dois guichês → `409 ENCAIXE_NAO_CONFIGURADO`, orientando a recepção.
 * Nenhum guichê configurado → `409 ENCAIXE_NAO_CONFIGURADO`, mesmo havendo agendamento — pelo
   menos o Guichê 1 é sempre obrigatório agora.
 * O registro do guichê nasce **no mesmo funcionário e na mesma empresa do agendamento encontrado**

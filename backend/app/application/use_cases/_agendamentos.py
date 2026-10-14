@@ -25,6 +25,16 @@ def agendas_consultadas(configs, guiches) -> list[str]:
     return list(dict.fromkeys(ids))
 
 
+def bloqueia_nova_chegada(agendamento: Agendamento, guiche_ids: set[str]) -> bool:
+    """Registro de chegada que ainda não foi atendido impede outra chegada no mesmo dia.
+
+    Registro já atendido no guichê não bloqueia: o paciente pode voltar a ser atendido.
+    """
+    if agendamento.agenda_id_sgg in guiche_ids:
+        return agendamento.status != StatusAgendamento.ATENDIDO
+    return agendamento.status in STATUS_JA_EM_FILA
+
+
 def listar_agendamentos_do_dia(
     sgg: SggGateway, paciente: Paciente, agenda_ids: list[str], agora: datetime
 ) -> list[Agendamento]:
