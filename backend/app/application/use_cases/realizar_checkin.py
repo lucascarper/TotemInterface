@@ -2,9 +2,13 @@
 
 Regras:
 - Somente agendas marcadas como *monitoradas* (e os dois guichês) são consultadas.
-- Se já existe um registro do dia em status AGUARDANDO/EM_ATENDIMENTO → check-in repetido
-  (não duplica). Esse registro só vive num guichê: o totem nunca toca no agendamento
-  original, então essa é a única fonte de verdade sobre "já chegou hoje".
+- Se já existe um registro de chegada do dia que ainda não foi atendido (AGUARDANDO, EM_ATENDIMENTO
+  ou qualquer outro status num guichê diferente de ATENDIDO) → check-in repetido, não duplica.
+  Esse registro só vive num guichê: o totem nunca toca no agendamento original.
+- Paciente já atendido pode voltar: o novo registro vai para um guichê onde ele ainda não tem
+  registro hoje. O SGG recusa dois registros do mesmo paciente na mesma agenda de ordem de chegada
+  no mesmo dia (D16026), mesmo com o anterior atendido. Se ele já tem registro nos dois guichês,
+  recusa com ENCAIXE_NAO_CONFIGURADO e orienta a recepção.
 - Havendo ou não um agendamento AGENDADO hoje, o resultado é sempre a criação de um novo
   registro, já em AGUARDANDO, num dos dois guichês. O agendamento original (se houver)
   nunca é alterado — fica intacto para referência/relatórios.
@@ -30,8 +34,8 @@ from datetime import date, datetime
 from app.application.dto import CheckinDTO
 from app.application.use_cases._agendamentos import (
     STATUS_ELEGIVEIS_CHECKIN,
-    STATUS_JA_EM_FILA,
     agendas_consultadas,
+    bloqueia_nova_chegada,
     empresa_ativa,
     listar_agendamentos_do_dia,
     paciente_do_agendamento,
@@ -81,7 +85,10 @@ class RealizarCheckinUseCase:
             busca_ids = agendas_consultadas(configs, guiches)
             agendamentos = listar_agendamentos_do_dia(self._sgg, paciente, busca_ids, agora)
 
-            em_fila = next((a for a in agendamentos if a.status in STATUS_JA_EM_FILA), None)
+            guiche_ids = {
+                g for g in (guiches.guiche_1_agenda_id_sgg, guiches.guiche_2_agenda_id_sgg) if g
+            }
+            em_fila = next((a for a in agendamentos if bloqueia_nova_chegada(a, guiche_ids)), None)
             if em_fila:
                 self._log(
                     TipoOperacao.ATUALIZACAO_STATUS,
@@ -111,12 +118,22 @@ class RealizarCheckinUseCase:
                 )
                 raise EmpresaInativaError()
 
-            destino, numero_guiche = self._resolver_guiche(guiches, tipo, agora.date())
+            ja_atendido_no = {
+                a.agenda_id_sgg for a in agendamentos if a.agenda_id_sgg in guiche_ids
+            }
+            destino, numero_guiche = self._resolver_guiche(
+                guiches, tipo, agora.date(), excluir=ja_atendido_no
+            )
             if destino is None:
+                motivo = (
+                    "Paciente já tem registro em todos os guichês hoje"
+                    if guiche_ids
+                    else "Nenhum guichê configurado"
+                )
                 self._log(
                     TipoOperacao.CRIACAO_AGENDAMENTO,
                     False,
-                    "Nenhum guichê configurado",
+                    motivo,
                     cpf,
                     tipo,
                     paciente_id=alvo.id_sgg,
@@ -186,18 +203,31 @@ class RealizarCheckinUseCase:
             raise
 
     def _resolver_guiche(
-        self, guiches: ConfiguracaoGuiches, tipo: TipoAtendimento, hoje: date
+        self,
+        guiches: ConfiguracaoGuiches,
+        tipo: TipoAtendimento,
+        hoje: date,
+        excluir: frozenset[str] = frozenset(),
     ) -> tuple[str | None, int | None]:
-        """Devolve (agenda_id_sgg do destino, número do guichê) ou (None, None)."""
-        g1, g2 = guiches.guiche_1_agenda_id_sgg, guiches.guiche_2_agenda_id_sgg
-        if g1 and not g2:
-            return g1, 1
-        if g2 and not g1:
-            return g2, 2
-        if not g1 and not g2:
-            return None, None
+        """Devolve (agenda_id_sgg do destino, número do guichê) ou (None, None).
 
-        # Os dois guichês existem: Preferencial sempre no 1; Normal por menor fila.
+        `excluir` são guichês em que o paciente já tem registro hoje (o SGG não aceita outro).
+        """
+        disponiveis = [
+            (agenda, numero)
+            for agenda, numero in (
+                (guiches.guiche_1_agenda_id_sgg, 1),
+                (guiches.guiche_2_agenda_id_sgg, 2),
+            )
+            if agenda and agenda not in excluir
+        ]
+        if not disponiveis:
+            return None, None
+        if len(disponiveis) == 1:
+            return disponiveis[0]
+
+        # Os dois guichês disponíveis: Preferencial sempre no 1; Normal por menor fila.
+        g1, g2 = disponiveis[0][0], disponiveis[1][0]
         if tipo == TipoAtendimento.PREFERENCIAL:
             return g1, 1
 

@@ -116,6 +116,60 @@ def test_checkin_ja_realizado_em_outro_vinculo_nao_duplica_e_audita_o_vinculo_ce
     assert log.mensagem == "Check-in já realizado" and log.paciente_id_sgg == "P1b"
 
 
+def atender(sgg, dto):
+    """A recepção marca o registro do guichê como atendido."""
+    sgg.atualizar_status_agendamento(dto.agendamento_id_sgg, StatusAgendamento.ATENDIDO)
+
+
+def test_checkin_apos_atendimento_cria_novo_em_outro_guiche(container_configurado, sgg):
+    """Paciente atendido sai e volta: entra de novo, num guichê que ainda não tem registro dele."""
+    primeiro = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    atender(sgg, primeiro)
+
+    segundo = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+
+    assert segundo.resultado == ResultadoCheckin.AGENDAMENTO_CONFIRMADO
+    assert sgg.obter_agendamento(segundo.agendamento_id_sgg).agenda_id_sgg == "A6"
+
+
+def test_checkin_preferencial_apos_atendimento_no_guiche_1_vai_para_o_2(container_configurado, sgg):
+    primeiro = container_configurado.realizar_checkin().executar(JOAO, TipoAtendimento.PREFERENCIAL)
+    assert sgg.obter_agendamento(primeiro.agendamento_id_sgg).agenda_id_sgg == "A4"
+    atender(sgg, primeiro)
+
+    segundo = container_configurado.realizar_checkin().executar(JOAO, TipoAtendimento.PREFERENCIAL)
+
+    assert sgg.obter_agendamento(segundo.agendamento_id_sgg).agenda_id_sgg == "A6"
+
+
+def test_checkin_apos_atendimento_nos_dois_guiches_e_recusado(container_configurado, sgg):
+    primeiro = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    atender(sgg, primeiro)
+    segundo = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    atender(sgg, segundo)
+    antes = sgg.ids_agendamentos()
+
+    with pytest.raises(AgendaEncaixeNaoConfiguradaError):
+        container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    assert sgg.ids_agendamentos() == antes
+
+
+@pytest.mark.parametrize(
+    "status",
+    [StatusAgendamento.AGUARDANDO, StatusAgendamento.EM_ATENDIMENTO, StatusAgendamento.CANCELADO],
+)
+def test_checkin_bloqueia_enquanto_o_registro_do_guiche_nao_foi_atendido(
+    container_configurado, sgg, status
+):
+    primeiro = container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    sgg.atualizar_status_agendamento(primeiro.agendamento_id_sgg, status)
+    antes = sgg.ids_agendamentos()
+
+    with pytest.raises(CheckinJaRealizadoError):
+        container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.NORMAL)
+    assert sgg.ids_agendamentos() == antes
+
+
 def test_checkin_recusa_empresa_inativa_sem_criar_registro(container_configurado, sgg):
     antes = sgg.ids_agendamentos()
     with pytest.raises(EmpresaInativaError):
