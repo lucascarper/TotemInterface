@@ -51,7 +51,7 @@ $web = Start-Process -PassThru -NoNewWindow -WorkingDirectory "frontend" `
 
 # Impede o PC de dormir enquanto o paliativo estiver no ar.
 Add-Type -Namespace Win32 -Name Power -MemberDefinition '[DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint f);'
-[Win32.Power]::SetThreadExecutionState(0x80000003) | Out-Null  # CONTINUOUS | SYSTEM | DISPLAY
+[Win32.Power]::SetThreadExecutionState([uint32]2147483651) | Out-Null  # CONTINUOUS | SYSTEM | DISPLAY
 
 Write-Host ""
 Write-Host "==> Totem:  http://${IP}:${WebPort}/totem" -ForegroundColor Green
@@ -64,5 +64,5 @@ try {
     foreach ($p in $api, $web) {
         if ($p -and -not $p.HasExited) { & taskkill.exe /PID $p.Id /T /F | Out-Null }
     }
-    [Win32.Power]::SetThreadExecutionState(0x80000000) | Out-Null
+    [Win32.Power]::SetThreadExecutionState([uint32]2147483648) | Out-Null  # CONTINUOUS (libera)
 }
