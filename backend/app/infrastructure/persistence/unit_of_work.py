@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.infrastructure.persistence.repositories import (
     SqlAgendaRepository,
     SqlConfiguracaoAgendaRepository,
-    SqlConfiguracaoGuichesRepository,
+    SqlConfiguracaoTotemRepository,
     SqlLocalRepository,
     SqlLogOperacaoRepository,
     SqlSincronizacaoRepository,
@@ -25,7 +25,7 @@ class SqlAlchemyUnitOfWork:
         self.agendas = SqlAgendaRepository(s)
         self.locais = SqlLocalRepository(s)
         self.configuracoes = SqlConfiguracaoAgendaRepository(s)
-        self.guiches = SqlConfiguracaoGuichesRepository(s)
+        self.totem = SqlConfiguracaoTotemRepository(s)
         self.logs = SqlLogOperacaoRepository(s)
         self.sincronizacoes = SqlSincronizacaoRepository(s)
         return self

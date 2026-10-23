@@ -2,10 +2,13 @@ import {
   ArrowRight,
   ArrowsClockwise,
   Backspace,
+  CaretDown,
   CaretLeft,
+  CaretUp,
   Check,
   HandHeart,
   Star,
+  Trash,
   User,
   WarningCircle,
   WifiSlash,
@@ -28,3 +31,6 @@ export const IconBackspace = wrap(Backspace);
 export const IconRefresh = wrap(ArrowsClockwise);
 export const IconWifiOff = wrap(WifiSlash);
 export const IconArrowRight = wrap(ArrowRight);
+export const IconUp = wrap(CaretUp);
+export const IconDown = wrap(CaretDown);
+export const IconTrash = wrap(Trash);

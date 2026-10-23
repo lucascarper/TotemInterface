@@ -9,7 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.api.container import build_container
 from app.core.config import Settings
-from app.domain.entities import ConfiguracaoAgenda, ConfiguracaoGuiches
+from app.domain.entities import ConfiguracaoAgenda, ConfiguracaoTotem
 from app.infrastructure.clock import TZ
 from app.infrastructure.sgg.fake_gateway import SggFakeGateway
 from app.main import create_app
@@ -51,13 +51,13 @@ def container(settings, sgg):
 
 @pytest.fixture
 def container_configurado(container):
-    """Sincroniza, monitora A1/A2 e configura os dois guichês (A4 e A6)."""
+    """Sincroniza, monitora A1/A2 e usa A4 e A6 como agendas da recepção (modo de criação)."""
     container.sincronizar().executar()
     with container.uow as uow:
         uow.configuracoes.salvar_todas(
             [ConfiguracaoAgenda("A1", True), ConfiguracaoAgenda("A2", True)]
         )
-        uow.guiches.salvar(ConfiguracaoGuiches("A4", "A6"))
+        uow.totem.salvar(ConfiguracaoTotem(agendas_recepcao=["A4", "A6"]))
         uow.commit()
     return container
 

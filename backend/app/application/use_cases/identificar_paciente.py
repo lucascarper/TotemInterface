@@ -10,7 +10,7 @@ from app.application.use_cases._agendamentos import (
     localizar_agendamento_do_dia,
     paciente_do_agendamento,
 )
-from app.domain.entities import Cpf, LogOperacao, TipoOperacao
+from app.domain.entities import ConfiguracaoTotem, Cpf, LogOperacao, ModoTotem, TipoOperacao
 from app.domain.exceptions import (
     EmpresaInativaError,
     PacienteNaoEncontradoError,
@@ -40,12 +40,11 @@ class IdentificarPacienteUseCase:
 
         with self._uow as uow:
             configs = uow.configuracoes.listar_monitoradas()
-            guiches = uow.guiches.obter()
-            monitoradas = agendas_consultadas(configs, guiches)
+            totem = uow.totem.obter()
             agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
         agendamento = localizar_agendamento_do_dia(
-            self._sgg, paciente, monitoradas, self._clock.agora()
+            self._sgg, paciente, self._busca(configs, totem), self._clock.agora()
         )
 
         # Avisa já aqui (e não depois de o paciente confirmar) quando o check-in seria recusado
@@ -89,6 +88,15 @@ class IdentificarPacienteUseCase:
             agendamento_horario=agendamento.data_hora if agendamento else None,
             agenda_nome=agenda_nome,
         )
+
+    @staticmethod
+    def _busca(configs, totem: ConfiguracaoTotem) -> list[str]:
+        """Onde está "o agendamento" do paciente: no modo de edição, só na recepção (e no
+        encaixe, para mostrar quem já passou por lá); no de criação, monitoradas e recepção."""
+        if totem.modo == ModoTotem.EDICAO:
+            encaixe = [totem.agenda_encaixe_id_sgg] if totem.agenda_encaixe_id_sgg else []
+            return list(dict.fromkeys(totem.agendas_recepcao + encaixe))
+        return agendas_consultadas(configs, totem)
 
     def _log(self, tipo, sucesso, msg, cpf: Cpf, paciente_id=None, agendamento_id=None):
         with self._uow as uow:

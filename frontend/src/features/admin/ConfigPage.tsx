@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { adminApi } from "@/api/admin";
 import { ApiError } from "@/api/client";
-import type { ConfiguracaoAgenda, Guiches, StatusSincronizacao } from "@/api/types";
+import type { ConfiguracaoAgenda, StatusSincronizacao } from "@/api/types";
 import { IconRefresh } from "@/components/Icons";
 import { dataHora } from "@/lib/format";
+import { TotemCard } from "./TotemCard";
 
 function tratar(e: unknown): string {
   if (e instanceof ApiError && e.status === 401) window.dispatchEvent(new Event("admin:unauthorized"));
@@ -17,6 +18,8 @@ export function ConfigPage() {
   const [carregando, setCarregando] = useState(true);
   const [ocupado, setOcupado] = useState(false);
   const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+  // A sincronização pode tirar da recepção uma agenda que ficou inativa: recarrega o cartão.
+  const [versaoTotem, setVersaoTotem] = useState(0);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -65,6 +68,7 @@ export function ConfigPage() {
       const r = await adminApi.sincronizar();
       setMsg({ tipo: "ok", texto: `Sincronizado: ${r.agendas} agendas e ${r.locais} locais.` });
       await carregar();
+      setVersaoTotem((v) => v + 1);
     } catch (e) {
       setMsg({ tipo: "erro", texto: tratar(e) });
     } finally {
@@ -74,13 +78,13 @@ export function ConfigPage() {
 
   return (
     <div className="animate-rise">
-      <GuichesCard itens={itens} />
+      <TotemCard key={versaoTotem} itens={itens} />
 
       <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Agendas do totem</h1>
+          <h1 className="text-2xl font-bold">Agendas monitoradas</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            Marque quais agendas do SGG o totem consulta para encontrar o agendamento do paciente.
+            Usadas só no modo de criação: onde o totem procura o agendamento do paciente (consultórios).
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -150,105 +154,6 @@ export function ConfigPage() {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function GuichesCard({ itens }: { itens: ConfiguracaoAgenda[] }) {
-  const [guiches, setGuiches] = useState<Guiches | null>(null);
-  const [g1, setG1] = useState<string>("");
-  const [g2, setG2] = useState<string>("");
-  const [carregando, setCarregando] = useState(true);
-  const [ocupado, setOcupado] = useState(false);
-  const [msg, setMsg] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
-
-  const carregar = useCallback(async () => {
-    setCarregando(true);
-    try {
-      const g = await adminApi.guiches();
-      setGuiches(g);
-      setG1(g.guiche_1_agenda_id_sgg ?? "");
-      setG2(g.guiche_2_agenda_id_sgg ?? "");
-    } catch (e) {
-      setMsg({ tipo: "erro", texto: tratar(e) });
-    } finally {
-      setCarregando(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    carregar();
-  }, [carregar]);
-
-  const opcoes = useMemo(() => itens.filter((i) => i.ativa && i.por_ordem_chegada), [itens]);
-  const alterado =
-    !guiches ||
-    g1 !== (guiches.guiche_1_agenda_id_sgg ?? "") ||
-    g2 !== (guiches.guiche_2_agenda_id_sgg ?? "");
-
-  const salvar = async () => {
-    setOcupado(true);
-    setMsg(null);
-    try {
-      await adminApi.salvarGuiches(g1 || null, g2 || null);
-      setMsg({ tipo: "ok", texto: "Guichês salvos. Novos check-ins já usam a nova configuração." });
-      await carregar();
-    } catch (e) {
-      setMsg({ tipo: "erro", texto: tratar(e) });
-    } finally {
-      setOcupado(false);
-    }
-  };
-
-  return (
-    <div className="rounded-xl2 bg-white p-5 shadow-card ring-1 ring-surface-line">
-      <h2 className="text-lg font-bold">Guichês de atendimento</h2>
-      <p className="mt-1 text-sm text-ink-muted">
-        Toda chegada confirmada no totem nasce num destes dois guichês — não importa em qual
-        agenda o paciente estava agendado. Atendimento <strong>Preferencial</strong> vai sempre
-        para o Guichê 1; <strong>Normal</strong> é distribuído para quem tiver menos gente
-        aguardando agora, alternando em caso de empate. Cada guichê precisa ser uma agenda do SGG
-        por <strong>ordem de chegada</strong>.
-      </p>
-
-      {!carregando && opcoes.length === 0 && (
-        <p className="mt-3 rounded-lg bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
-          Nenhuma agenda por ordem de chegada disponível. Sincronize com o SGG ou crie uma lá antes.
-        </p>
-      )}
-      {!carregando && !g1 && !g2 && (
-        <p className="mt-3 rounded-lg bg-warn-soft px-4 py-3 text-sm font-medium text-warn">
-          Nenhum guichê configurado. O check-in vai falhar até pelo menos o Guichê 1 ser definido.
-        </p>
-      )}
-      {msg && (
-        <p className={`mt-3 rounded-lg px-4 py-3 text-sm font-medium ${msg.tipo === "ok" ? "bg-ok-soft text-ok" : "bg-brand-red-50 text-brand-red"}`}>{msg.texto}</p>
-      )}
-
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <label className="block text-sm font-semibold">
-          Guichê 1
-          <select className="field mt-1" value={g1} onChange={(e) => setG1(e.target.value)} disabled={carregando}>
-            <option value="">— selecione —</option>
-            {opcoes.map((o) => (
-              <option key={o.agenda_id_sgg} value={o.agenda_id_sgg}>{o.agenda_nome}</option>
-            ))}
-          </select>
-        </label>
-        <label className="block text-sm font-semibold">
-          Guichê 2
-          <select className="field mt-1" value={g2} onChange={(e) => setG2(e.target.value)} disabled={carregando}>
-            <option value="">— selecione —</option>
-            {opcoes.map((o) => (
-              <option key={o.agenda_id_sgg} value={o.agenda_id_sgg}>{o.agenda_nome}</option>
-            ))}
-          </select>
-        </label>
-      </div>
-
-      <button onClick={salvar} disabled={!alterado || ocupado} className="btn-primary mt-4">
-        Salvar guichês
-      </button>
     </div>
   );
 }

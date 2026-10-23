@@ -34,11 +34,19 @@ export interface ConfiguracaoAgenda {
   monitorada: boolean;
 }
 
-export interface Guiches {
-  guiche_1_agenda_id_sgg: string | null;
-  guiche_1_agenda_nome: string | null;
-  guiche_2_agenda_id_sgg: string | null;
-  guiche_2_agenda_nome: string | null;
+export type ModoTotem = "CRIACAO" | "EDICAO";
+
+export interface AgendaResumo {
+  agenda_id_sgg: string;
+  agenda_nome: string;
+  ativa: boolean;
+  por_ordem_chegada: boolean;
+}
+
+export interface ConfiguracaoTotem {
+  modo: ModoTotem;
+  agendas_recepcao: AgendaResumo[];
+  agenda_encaixe: AgendaResumo | null;
 }
 
 export interface StatusSincronizacao {

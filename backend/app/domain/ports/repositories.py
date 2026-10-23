@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol
 
 from app.domain.entities import (
     Agenda,
     ConfiguracaoAgenda,
-    ConfiguracaoGuiches,
+    ConfiguracaoTotem,
     LocalAtendimento,
     LogOperacao,
 )
@@ -17,6 +18,9 @@ class AgendaRepository(Protocol):
     def substituir_todas(self, agendas: list[Agenda]) -> None: ...
     def listar(self, apenas_ativas: bool = True) -> list[Agenda]: ...
     def obter(self, agenda_id_sgg: str) -> Agenda | None: ...
+    def remover_inativas(self, exceto: set[str]) -> int:
+        """Apaga do cadastro local as agendas inativas fora de `exceto`; devolve quantas."""
+        ...
 
 
 class LocalRepository(Protocol):
@@ -30,20 +34,24 @@ class ConfiguracaoAgendaRepository(Protocol):
     def salvar_todas(self, configuracoes: list[ConfiguracaoAgenda]) -> None: ...
 
 
-class ConfiguracaoGuichesRepository(Protocol):
-    """Linha única (singleton): os dois guichês de atendimento."""
+class ConfiguracaoTotemRepository(Protocol):
+    """Linha única (singleton): modo do totem, agendas da recepção e agenda de encaixe."""
 
-    def obter(self) -> ConfiguracaoGuiches: ...
-    def salvar(self, configuracao: ConfiguracaoGuiches) -> None: ...
+    def obter(self) -> ConfiguracaoTotem: ...
+    def salvar(self, configuracao: ConfiguracaoTotem) -> None: ...
 
 
 class LogOperacaoRepository(Protocol):
     def registrar(self, log: LogOperacao) -> LogOperacao: ...
     def listar_recentes(self, limite: int = 100) -> list[LogOperacao]: ...
+    def apagar_anteriores_a(self, limite: datetime) -> int: ...
 
 
 class SincronizacaoRepository(Protocol):
-    def registrar_execucao(self, sucesso: bool, mensagem: str) -> None: ...
+    def registrar_execucao(self, sucesso: bool, mensagem: str) -> None:
+        """Guarda só a execução mais recente (é a única que o painel mostra)."""
+        ...
+
     def ultima_execucao(self) -> dict | None: ...
 
 
@@ -53,7 +61,7 @@ class UnitOfWork(Protocol):
     agendas: AgendaRepository
     locais: LocalRepository
     configuracoes: ConfiguracaoAgendaRepository
-    guiches: ConfiguracaoGuichesRepository
+    totem: ConfiguracaoTotemRepository
     logs: LogOperacaoRepository
     sincronizacoes: SincronizacaoRepository
 

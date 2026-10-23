@@ -45,6 +45,7 @@ class SggFakeGateway:
             Agenda("A4", "Recepção", "L1", por_ordem_chegada=True),
             Agenda("A5", "Psicologia - Zona Norte", "L2", duracao_padrao_minutos=30),
             Agenda("A6", "Guichê 2", "L1", por_ordem_chegada=True),
+            Agenda("A7", "Encaixe Recepção", "L1", por_ordem_chegada=True),
         ]
         self._pacientes = {
             "52998224725": Paciente(

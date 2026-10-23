@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     sgg_timeout_seconds: float = 8.0
     sync_interval_seconds: int = 300
 
+    # Por quantos dias os eventos de paciente ficam na auditoria local.
+    retencao_logs_dias: int = 30
+
     # Admin / auth
     admin_username: str = "admin"
     admin_password: str = "admin123"

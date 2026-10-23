@@ -8,16 +8,17 @@ from sqlalchemy.orm import Session
 from app.domain.entities import (
     Agenda,
     ConfiguracaoAgenda,
-    ConfiguracaoGuiches,
+    ConfiguracaoTotem,
     LocalAtendimento,
     LogOperacao,
+    ModoTotem,
     TipoAtendimento,
     TipoOperacao,
 )
 from app.infrastructure.persistence.models import (
     AgendaModel,
     ConfiguracaoAgendaModel,
-    ConfiguracaoGuichesModel,
+    ConfiguracaoTotemModel,
     LocalModel,
     LogOperacaoModel,
     SincronizacaoModel,
@@ -71,6 +72,22 @@ class SqlAgendaRepository:
     def obter(self, agenda_id_sgg: str) -> Agenda | None:
         m = self._s.get(AgendaModel, agenda_id_sgg)
         return self._to_entity(m) if m else None
+
+    def remover_inativas(self, exceto: set[str]) -> int:
+        ids = [
+            m.id_sgg
+            for m in self._s.scalars(select(AgendaModel).where(AgendaModel.ativa.is_(False))).all()
+            if m.id_sgg not in exceto
+        ]
+        if not ids:
+            return 0
+        # Apaga a configuração antes: o ON DELETE CASCADE não vale no SQLite sem PRAGMA.
+        self._s.execute(
+            delete(ConfiguracaoAgendaModel).where(ConfiguracaoAgendaModel.agenda_id_sgg.in_(ids))
+        )
+        self._s.execute(delete(AgendaModel).where(AgendaModel.id_sgg.in_(ids)))
+        self._s.flush()
+        return len(ids)
 
     @staticmethod
     def _to_entity(m: AgendaModel) -> Agenda:
@@ -130,25 +147,29 @@ class SqlConfiguracaoAgendaRepository:
         return ConfiguracaoAgenda(m.agenda_id_sgg, m.monitorada)
 
 
-class SqlConfiguracaoGuichesRepository:
+class SqlConfiguracaoTotemRepository:
     _ID = 1  # linha única
 
     def __init__(self, session: Session) -> None:
         self._s = session
 
-    def obter(self) -> ConfiguracaoGuiches:
-        m = self._s.get(ConfiguracaoGuichesModel, self._ID)
+    def obter(self) -> ConfiguracaoTotem:
+        m = self._s.get(ConfiguracaoTotemModel, self._ID)
         if m is None:
-            return ConfiguracaoGuiches()
-        return ConfiguracaoGuiches(
-            m.guiche_1_agenda_id_sgg, m.guiche_2_agenda_id_sgg, m.ultimo_guiche_usado
+            return ConfiguracaoTotem()
+        return ConfiguracaoTotem(
+            modo=ModoTotem(m.modo),
+            agendas_recepcao=list(m.agendas_recepcao or []),
+            agenda_encaixe_id_sgg=m.agenda_encaixe_id_sgg,
+            ultima_recepcao_usada=m.ultima_recepcao_usada,
         )
 
-    def salvar(self, configuracao: ConfiguracaoGuiches) -> None:
-        m = self._s.get(ConfiguracaoGuichesModel, self._ID) or ConfiguracaoGuichesModel(id=self._ID)
-        m.guiche_1_agenda_id_sgg = configuracao.guiche_1_agenda_id_sgg
-        m.guiche_2_agenda_id_sgg = configuracao.guiche_2_agenda_id_sgg
-        m.ultimo_guiche_usado = configuracao.ultimo_guiche_usado
+    def salvar(self, configuracao: ConfiguracaoTotem) -> None:
+        m = self._s.get(ConfiguracaoTotemModel, self._ID) or ConfiguracaoTotemModel(id=self._ID)
+        m.modo = configuracao.modo.value
+        m.agendas_recepcao = list(configuracao.agendas_recepcao)
+        m.agenda_encaixe_id_sgg = configuracao.agenda_encaixe_id_sgg
+        m.ultima_recepcao_usada = configuracao.ultima_recepcao_usada
         self._s.add(m)
         self._s.flush()
 
@@ -196,12 +217,20 @@ class SqlLogOperacaoRepository:
             for m in self._s.scalars(stmt).all()
         ]
 
+    def apagar_anteriores_a(self, limite: datetime) -> int:
+        resultado = self._s.execute(
+            delete(LogOperacaoModel).where(LogOperacaoModel.criado_em < limite)
+        )
+        self._s.flush()
+        return resultado.rowcount or 0
+
 
 class SqlSincronizacaoRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
     def registrar_execucao(self, sucesso: bool, mensagem: str) -> None:
+        self._s.execute(delete(SincronizacaoModel))
         self._s.add(
             SincronizacaoModel(executado_em=_agora_utc(), sucesso=sucesso, mensagem=mensagem)
         )

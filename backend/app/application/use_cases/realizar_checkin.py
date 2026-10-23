@@ -1,39 +1,42 @@
-"""RF08/RF09 — realiza o check-in: sempre cria um registro num dos dois guichês.
+"""RF08/RF09 — realiza o check-in, em um de dois modos configurados no painel.
 
-Regras:
-- Somente agendas marcadas como *monitoradas* (e os dois guichês) são consultadas.
+Modo de criação (padrão):
+- Consulta as agendas *monitoradas* e as agendas da recepção.
 - Se já existe um registro de chegada do dia que ainda não foi atendido (AGUARDANDO, EM_ATENDIMENTO
-  ou qualquer outro status num guichê diferente de ATENDIDO) → check-in repetido, não duplica.
-  Esse registro só vive num guichê: o totem nunca toca no agendamento original.
-- Paciente já atendido pode voltar: o novo registro vai para um guichê onde ele ainda não tem
-  registro hoje. O SGG recusa dois registros do mesmo paciente na mesma agenda de ordem de chegada
-  no mesmo dia (D16026), mesmo com o anterior atendido. Se ele já tem registro nos dois guichês,
-  recusa com ENCAIXE_NAO_CONFIGURADO e orienta a recepção.
-- Havendo ou não um agendamento AGENDADO hoje, o resultado é sempre a criação de um novo
-  registro, já em AGUARDANDO, num dos dois guichês. O agendamento original (se houver)
-  nunca é alterado — fica intacto para referência/relatórios.
-- Distribuição entre os guichês (motivo: o SGG só permite uma pessoa "Em Atendimento"
-  por agenda, então um guichê travado numa consulta longa não pode travar o outro):
-    1) Preferencial vai sempre para o Guichê 1.
-    2) Normal vai para o guichê com menos gente "Aguardando" agora (consulta ao vivo no
-       SGG); em caso de empate, alterna com quem foi usado por último (round-robin).
-    3) Com um único guichê configurado, todo mundo vai para ele, sem distribuição.
-- O registro do guichê usa o mesmo funcionário e a mesma empresa do agendamento encontrado nas
-  agendas de consultório (sem agendamento, o vínculo preferido do CPF).
-- Se essa empresa está inativa no SGG, recusa com EMPRESA_INATIVA antes de criar qualquer
-  registro (o gateway já prefere, entre os vínculos do CPF, o de uma empresa ativa).
-- Toda operação é registrada para auditoria.
-- Atendimento Preferencial ganha um marcador `[PREFERENCIAL]` no início da observação
-  enviada ao SGG (veja `_observacao`), para se destacar em qualquer lista dentro do SGG.
+  ou outro status na recepção diferente de ATENDIDO e AGENDADO) → check-in repetido, não duplica.
+- Havendo ou não agendamento AGENDADO hoje, sempre cria um novo registro, já em AGUARDANDO, numa
+  agenda da recepção. O agendamento original nunca é alterado.
+- Paciente já atendido pode voltar: o novo registro vai para uma agenda da recepção onde ele ainda
+  não tem registro hoje (o SGG recusa dois do mesmo paciente na mesma agenda de ordem de chegada
+  no mesmo dia, D16026). Sem nenhuma disponível, recusa com ENCAIXE_NAO_CONFIGURADO.
+- Distribuição (o SGG só permite uma pessoa "Em Atendimento" por agenda):
+    1) Preferencial vai para a primeira agenda da recepção disponível.
+    2) Normal vai para a de menos gente "Aguardando" agora; no empate, alterna a partir da última
+       usada (round-robin pela ordem da lista).
+- O registro usa o funcionário e a empresa do agendamento encontrado (sem agendamento, o vínculo
+  preferido do CPF). Preferencial ganha `[PREFERENCIAL]` no início da observação.
+
+Modo de edição:
+- Consulta só as agendas da recepção (e a de encaixe, para saber se ele já passou por lá hoje).
+- O primeiro agendamento AGENDADO do dia na recepção vira AGUARDANDO; nada é criado. A API só
+  altera situação, então o Preferencial fica registrado apenas na auditoria.
+- Sem agendamento AGENDADO (inclusive Faltou, Cancelado ou já atendido que voltou): cria o
+  encaixe na agenda de encaixe, já em AGUARDANDO. Só cabe um por dia nessa agenda (D16026); quem
+  já tem registro lá hoje é orientado a procurar a recepção.
+
+Nos dois modos: empresa inativa recusa com EMPRESA_INATIVA antes de qualquer escrita, e toda
+operação é registrada para auditoria.
 """
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime
 
 from app.application.dto import CheckinDTO
 from app.application.use_cases._agendamentos import (
     STATUS_ELEGIVEIS_CHECKIN,
+    STATUS_JA_EM_FILA,
     agendas_consultadas,
     bloqueia_nova_chegada,
     empresa_ativa,
@@ -42,9 +45,11 @@ from app.application.use_cases._agendamentos import (
 )
 from app.domain.entities import (
     Agendamento,
-    ConfiguracaoGuiches,
+    ConfiguracaoTotem,
     Cpf,
     LogOperacao,
+    ModoTotem,
+    Paciente,
     ResultadoCheckin,
     StatusAgendamento,
     TipoAtendimento,
@@ -79,121 +84,12 @@ class RealizarCheckinUseCase:
 
             with self._uow as uow:
                 configs = uow.configuracoes.listar_monitoradas()
-                guiches = uow.guiches.obter()
+                totem = uow.totem.obter()
                 agendas = {a.id_sgg: a for a in uow.agendas.listar(apenas_ativas=False)}
 
-            busca_ids = agendas_consultadas(configs, guiches)
-            agendamentos = listar_agendamentos_do_dia(self._sgg, paciente, busca_ids, agora)
-
-            guiche_ids = {
-                g for g in (guiches.guiche_1_agenda_id_sgg, guiches.guiche_2_agenda_id_sgg) if g
-            }
-            em_fila = next((a for a in agendamentos if bloqueia_nova_chegada(a, guiche_ids)), None)
-            if em_fila:
-                self._log(
-                    TipoOperacao.ATUALIZACAO_STATUS,
-                    False,
-                    "Check-in já realizado",
-                    cpf,
-                    tipo,
-                    paciente_id=em_fila.paciente_id_sgg,
-                    agendamento_id=em_fila.id_sgg,
-                    agenda_id=em_fila.agenda_id_sgg,
-                )
-                raise CheckinJaRealizadoError()
-
-            pendente = next((a for a in agendamentos if a.status in STATUS_ELEGIVEIS_CHECKIN), None)
-
-            # O registro do guichê nasce no mesmo funcionário/empresa do agendamento encontrado.
-            alvo = paciente_do_agendamento(paciente, pendente)
-            if not empresa_ativa(self._sgg, alvo):
-                self._log(
-                    TipoOperacao.CRIACAO_AGENDAMENTO,
-                    False,
-                    "Empresa inativa",
-                    cpf,
-                    tipo,
-                    paciente_id=alvo.id_sgg,
-                    agenda_id=pendente.agenda_id_sgg if pendente else None,
-                )
-                raise EmpresaInativaError()
-
-            ja_atendido_no = {
-                a.agenda_id_sgg for a in agendamentos if a.agenda_id_sgg in guiche_ids
-            }
-            destino, numero_guiche = self._resolver_guiche(
-                guiches, tipo, agora.date(), excluir=ja_atendido_no
-            )
-            if destino is None:
-                motivo = (
-                    "Paciente já tem registro em todos os guichês hoje"
-                    if guiche_ids
-                    else "Nenhum guichê configurado"
-                )
-                self._log(
-                    TipoOperacao.CRIACAO_AGENDAMENTO,
-                    False,
-                    motivo,
-                    cpf,
-                    tipo,
-                    paciente_id=alvo.id_sgg,
-                    agenda_id=pendente.agenda_id_sgg if pendente else None,
-                )
-                raise AgendaEncaixeNaoConfiguradaError()
-
-            observacao = self._observacao(pendente, agendas, tipo, agora)
-            criado = self._sgg.criar_agendamento(
-                paciente=alvo,
-                agenda_id_sgg=destino,
-                data_hora=agora,
-                tipo_atendimento=tipo,
-                observacao=observacao,
-            )
-            # O registro recém-criado já entra na fila de espera.
-            try:
-                criado = self._sgg.atualizar_status_agendamento(
-                    criado.id_sgg, StatusAgendamento.AGUARDANDO
-                )
-            except SggIndisponivelError:
-                # Registro existe; o status pode ser ajustado pela recepção.
-                pass
-
-            if numero_guiche is not None and tipo == TipoAtendimento.NORMAL:
-                self._registrar_ultimo_guiche(numero_guiche)
-
-            resultado = (
-                ResultadoCheckin.AGENDAMENTO_CONFIRMADO
-                if pendente
-                else ResultadoCheckin.ENCAIXE_CRIADO
-            )
-            self._log(
-                TipoOperacao.CRIACAO_AGENDAMENTO,
-                True,
-                "Agendamento confirmado na fila" if pendente else "Encaixe criado",
-                cpf,
-                tipo,
-                paciente_id=alvo.id_sgg,
-                agendamento_id=criado.id_sgg,
-                agenda_id=destino,
-            )
-
-            # Ao paciente, mostramos o horário/agenda originais quando existirem — é a
-            # informação que ele reconhece — mesmo que o registro criado esteja no guichê.
-            if pendente:
-                agenda_nome = self._nome_agenda(agendas, pendente.agenda_id_sgg)
-                horario = pendente.data_hora
-            else:
-                agenda_nome = self._nome_agenda(agendas, destino)
-                horario = criado.data_hora
-
-            return CheckinDTO(
-                resultado=resultado,
-                paciente_nome=paciente.nome_publico,
-                agendamento_id_sgg=criado.id_sgg,
-                agenda_nome=agenda_nome,
-                horario=horario,
-                tipo_atendimento=tipo,
-            )
+            if totem.modo == ModoTotem.EDICAO:
+                return self._por_edicao(cpf, tipo, agora, paciente, totem, agendas)
+            return self._por_criacao(cpf, tipo, agora, paciente, configs, totem, agendas)
 
         except SggIndisponivelError as exc:
             self._log(TipoOperacao.ERRO, False, f"SGG indisponível: {exc}", cpf, tipo)
@@ -202,54 +98,306 @@ class RealizarCheckinUseCase:
             self._log(TipoOperacao.ERRO, False, f"SGG recusou: {exc}", cpf, tipo)
             raise
 
-    def _resolver_guiche(
+    # ------------------------------------------------------------------ criação
+    def _por_criacao(
         self,
-        guiches: ConfiguracaoGuiches,
+        cpf: Cpf,
+        tipo: TipoAtendimento,
+        agora: datetime,
+        paciente: Paciente,
+        configs,
+        totem: ConfiguracaoTotem,
+        agendas: dict,
+    ) -> CheckinDTO:
+        recepcao_ids = set(totem.agendas_recepcao)
+        agendamentos = listar_agendamentos_do_dia(
+            self._sgg, paciente, agendas_consultadas(configs, totem), agora
+        )
+
+        em_fila = next((a for a in agendamentos if bloqueia_nova_chegada(a, recepcao_ids)), None)
+        if em_fila:
+            self._recusar_ja_registrado(cpf, tipo, em_fila)
+
+        # Agendamento marcado na recepção não é "o agendamento" do paciente neste modo: o que
+        # conta é o dos consultórios (monitoradas).
+        pendente = next(
+            (
+                a
+                for a in agendamentos
+                if a.status in STATUS_ELEGIVEIS_CHECKIN and a.agenda_id_sgg not in recepcao_ids
+            ),
+            None,
+        )
+
+        # O registro da recepção nasce no mesmo funcionário/empresa do agendamento encontrado.
+        alvo = paciente_do_agendamento(paciente, pendente)
+        self._exigir_empresa_ativa(cpf, tipo, alvo, pendente.agenda_id_sgg if pendente else None)
+
+        ocupadas = {a.agenda_id_sgg for a in agendamentos if a.agenda_id_sgg in recepcao_ids}
+        destino = self._resolver_recepcao(totem, tipo, agora.date(), excluir=ocupadas)
+        if destino is None:
+            motivo = (
+                "Paciente já tem registro em todas as agendas da recepção hoje"
+                if recepcao_ids
+                else "Nenhuma agenda da recepção configurada"
+            )
+            self._log(
+                TipoOperacao.CRIACAO_AGENDAMENTO,
+                False,
+                motivo,
+                cpf,
+                tipo,
+                paciente_id=alvo.id_sgg,
+                agenda_id=pendente.agenda_id_sgg if pendente else None,
+            )
+            raise AgendaEncaixeNaoConfiguradaError()
+
+        criado = self._criar_aguardando(alvo, destino, agora, tipo, pendente, agendas)
+        if tipo == TipoAtendimento.NORMAL:
+            self._registrar_ultima_recepcao(destino)
+
+        self._log(
+            TipoOperacao.CRIACAO_AGENDAMENTO,
+            True,
+            "Agendamento confirmado na fila" if pendente else "Encaixe criado",
+            cpf,
+            tipo,
+            paciente_id=alvo.id_sgg,
+            agendamento_id=criado.id_sgg,
+            agenda_id=destino,
+        )
+
+        # Ao paciente, mostramos o horário/agenda originais quando existirem: é a informação
+        # que ele reconhece, mesmo que o registro criado esteja na recepção.
+        if pendente:
+            return self._dto(
+                ResultadoCheckin.AGENDAMENTO_CONFIRMADO, paciente, criado, agendas, pendente, tipo
+            )
+        return self._dto(ResultadoCheckin.ENCAIXE_CRIADO, paciente, criado, agendas, criado, tipo)
+
+    def _resolver_recepcao(
+        self,
+        totem: ConfiguracaoTotem,
         tipo: TipoAtendimento,
         hoje: date,
-        excluir: frozenset[str] = frozenset(),
-    ) -> tuple[str | None, int | None]:
-        """Devolve (agenda_id_sgg do destino, número do guichê) ou (None, None).
+        excluir: set[str] = frozenset(),
+    ) -> str | None:
+        """Agenda da recepção que recebe o registro, ou None se não houver nenhuma disponível.
 
-        `excluir` são guichês em que o paciente já tem registro hoje (o SGG não aceita outro).
+        `excluir` são agendas em que o paciente já tem registro hoje (o SGG não aceita outro).
         """
-        disponiveis = [
-            (agenda, numero)
-            for agenda, numero in (
-                (guiches.guiche_1_agenda_id_sgg, 1),
-                (guiches.guiche_2_agenda_id_sgg, 2),
-            )
-            if agenda and agenda not in excluir
-        ]
+        disponiveis = [a for a in totem.agendas_recepcao if a not in excluir]
         if not disponiveis:
-            return None, None
-        if len(disponiveis) == 1:
+            return None
+        if len(disponiveis) == 1 or tipo == TipoAtendimento.PREFERENCIAL:
             return disponiveis[0]
 
-        # Os dois guichês disponíveis: Preferencial sempre no 1; Normal por menor fila.
-        g1, g2 = disponiveis[0][0], disponiveis[1][0]
-        if tipo == TipoAtendimento.PREFERENCIAL:
-            return g1, 1
+        with ThreadPoolExecutor(max_workers=min(len(disponiveis), 4)) as pool:
+            cargas = dict(
+                zip(disponiveis, pool.map(lambda a: self._carga(a, hoje), disponiveis), strict=True)
+            )
+        menor = min(cargas.values())
+        empatadas = [a for a in disponiveis if cargas[a] == menor]
+        if len(empatadas) == 1 or totem.ultima_recepcao_usada not in totem.agendas_recepcao:
+            return empatadas[0]
+        # Empate: a próxima da lista depois da última usada (dá a volta no fim).
+        ordem = totem.agendas_recepcao
+        i = ordem.index(totem.ultima_recepcao_usada)
+        return next(a for a in ordem[i + 1 :] + ordem[: i + 1] if a in empatadas)
 
-        carga_1 = self._carga_do_guiche(g1, hoje)
-        carga_2 = self._carga_do_guiche(g2, hoje)
-        if carga_1 < carga_2:
-            return g1, 1
-        if carga_2 < carga_1:
-            return g2, 2
-        # Empate: alterna com o último usado (round-robin), padrão para o 1.
-        return (g2, 2) if guiches.ultimo_guiche_usado == 1 else (g1, 1)
-
-    def _carga_do_guiche(self, agenda_id_sgg: str, hoje: date) -> int:
+    def _carga(self, agenda_id_sgg: str, hoje: date) -> int:
         itens = self._sgg.listar_agendamentos_da_agenda(agenda_id_sgg, hoje)
         return sum(1 for a in itens if a.status == StatusAgendamento.AGUARDANDO)
 
-    def _registrar_ultimo_guiche(self, numero: int) -> None:
+    def _registrar_ultima_recepcao(self, agenda_id_sgg: str) -> None:
         with self._uow as uow:
-            cfg = uow.guiches.obter()
-            cfg.ultimo_guiche_usado = numero
-            uow.guiches.salvar(cfg)
+            cfg = uow.totem.obter()
+            cfg.ultima_recepcao_usada = agenda_id_sgg
+            uow.totem.salvar(cfg)
             uow.commit()
+
+    # ------------------------------------------------------------------ edição
+    def _por_edicao(
+        self,
+        cpf: Cpf,
+        tipo: TipoAtendimento,
+        agora: datetime,
+        paciente: Paciente,
+        totem: ConfiguracaoTotem,
+        agendas: dict,
+    ) -> CheckinDTO:
+        recepcao_ids = set(totem.agendas_recepcao)
+        encaixe = totem.agenda_encaixe_id_sgg
+        busca = list(dict.fromkeys(totem.agendas_recepcao + ([encaixe] if encaixe else [])))
+        agendamentos = listar_agendamentos_do_dia(self._sgg, paciente, busca, agora)
+
+        em_fila = next(
+            (
+                a
+                for a in agendamentos
+                if (a.agenda_id_sgg in recepcao_ids and a.status in STATUS_JA_EM_FILA)
+                or (
+                    a.agenda_id_sgg == encaixe
+                    and a.status in STATUS_JA_EM_FILA | {StatusAgendamento.AGENDADO}
+                )
+            ),
+            None,
+        )
+        if em_fila:
+            self._recusar_ja_registrado(cpf, tipo, em_fila)
+
+        pendente = next(
+            (
+                a
+                for a in agendamentos
+                if a.agenda_id_sgg in recepcao_ids and a.status in STATUS_ELEGIVEIS_CHECKIN
+            ),
+            None,
+        )
+        if pendente:
+            return self._marcar_aguardando(cpf, tipo, paciente, pendente, agendas)
+        return self._criar_encaixe(cpf, tipo, agora, paciente, encaixe, agendamentos, agendas)
+
+    def _marcar_aguardando(
+        self,
+        cpf: Cpf,
+        tipo: TipoAtendimento,
+        paciente: Paciente,
+        pendente: Agendamento,
+        agendas: dict,
+    ) -> CheckinDTO:
+        alvo = paciente_do_agendamento(paciente, pendente)
+        self._exigir_empresa_ativa(cpf, tipo, alvo, pendente.agenda_id_sgg)
+        atualizado = self._sgg.atualizar_status_agendamento(
+            pendente.id_sgg, StatusAgendamento.AGUARDANDO
+        )
+        self._log(
+            TipoOperacao.ATUALIZACAO_STATUS,
+            True,
+            "Agendamento marcado como Aguardando",
+            cpf,
+            tipo,
+            paciente_id=alvo.id_sgg,
+            agendamento_id=pendente.id_sgg,
+            agenda_id=pendente.agenda_id_sgg,
+        )
+        return self._dto(
+            ResultadoCheckin.AGENDAMENTO_CONFIRMADO, paciente, atualizado, agendas, pendente, tipo
+        )
+
+    def _criar_encaixe(
+        self,
+        cpf: Cpf,
+        tipo: TipoAtendimento,
+        agora: datetime,
+        paciente: Paciente,
+        encaixe: str | None,
+        agendamentos: list[Agendamento],
+        agendas: dict,
+    ) -> CheckinDTO:
+        motivo = None
+        if not encaixe:
+            motivo = "Agenda de encaixe não configurada"
+        elif any(a.agenda_id_sgg == encaixe for a in agendamentos):
+            # O SGG só aceita um registro por paciente por dia nessa agenda (D16026).
+            motivo = "Paciente já passou pela agenda de encaixe hoje"
+        if motivo:
+            self._log(
+                TipoOperacao.CRIACAO_AGENDAMENTO,
+                False,
+                motivo,
+                cpf,
+                tipo,
+                paciente_id=paciente.id_sgg,
+                agenda_id=encaixe,
+            )
+            raise AgendaEncaixeNaoConfiguradaError()
+
+        self._exigir_empresa_ativa(cpf, tipo, paciente, encaixe)
+        criado = self._criar_aguardando(paciente, encaixe, agora, tipo, None, agendas)
+        self._log(
+            TipoOperacao.CRIACAO_AGENDAMENTO,
+            True,
+            "Encaixe criado",
+            cpf,
+            tipo,
+            paciente_id=paciente.id_sgg,
+            agendamento_id=criado.id_sgg,
+            agenda_id=encaixe,
+        )
+        return self._dto(ResultadoCheckin.ENCAIXE_CRIADO, paciente, criado, agendas, criado, tipo)
+
+    # ------------------------------------------------------------------ comum
+    def _recusar_ja_registrado(self, cpf: Cpf, tipo: TipoAtendimento, registro: Agendamento):
+        self._log(
+            TipoOperacao.ATUALIZACAO_STATUS,
+            False,
+            "Check-in já realizado",
+            cpf,
+            tipo,
+            paciente_id=registro.paciente_id_sgg,
+            agendamento_id=registro.id_sgg,
+            agenda_id=registro.agenda_id_sgg,
+        )
+        raise CheckinJaRealizadoError()
+
+    def _exigir_empresa_ativa(
+        self, cpf: Cpf, tipo: TipoAtendimento, alvo: Paciente, agenda_id: str | None
+    ) -> None:
+        if empresa_ativa(self._sgg, alvo):
+            return
+        self._log(
+            TipoOperacao.CRIACAO_AGENDAMENTO,
+            False,
+            "Empresa inativa",
+            cpf,
+            tipo,
+            paciente_id=alvo.id_sgg,
+            agenda_id=agenda_id,
+        )
+        raise EmpresaInativaError()
+
+    def _criar_aguardando(
+        self,
+        alvo: Paciente,
+        agenda_id_sgg: str,
+        agora: datetime,
+        tipo: TipoAtendimento,
+        pendente: Agendamento | None,
+        agendas: dict,
+    ) -> Agendamento:
+        criado = self._sgg.criar_agendamento(
+            paciente=alvo,
+            agenda_id_sgg=agenda_id_sgg,
+            data_hora=agora,
+            tipo_atendimento=tipo,
+            observacao=self._observacao(pendente, agendas, tipo, agora),
+        )
+        # O registro recém-criado já entra na fila de espera.
+        try:
+            return self._sgg.atualizar_status_agendamento(
+                criado.id_sgg, StatusAgendamento.AGUARDANDO
+            )
+        except SggIndisponivelError:
+            return criado  # o registro existe; a recepção ajusta o status, se preciso
+
+    def _dto(
+        self,
+        resultado: ResultadoCheckin,
+        paciente: Paciente,
+        registro: Agendamento,
+        agendas: dict,
+        exibido: Agendamento,
+        tipo: TipoAtendimento,
+    ) -> CheckinDTO:
+        return CheckinDTO(
+            resultado=resultado,
+            paciente_nome=paciente.nome_publico,
+            agendamento_id_sgg=registro.id_sgg,
+            agenda_nome=self._nome_agenda(agendas, exibido.agenda_id_sgg),
+            horario=exibido.data_hora,
+            tipo_atendimento=tipo,
+        )
 
     def _observacao(
         self,

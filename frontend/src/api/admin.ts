@@ -1,5 +1,5 @@
 import { request } from "./client";
-import type { ConfiguracaoAgenda, Guiches, LogItem, StatusSincronizacao } from "./types";
+import type { ConfiguracaoAgenda, ConfiguracaoTotem, LogItem, ModoTotem, StatusSincronizacao } from "./types";
 
 const TOKEN_KEY = "totem.admin.token";
 
@@ -22,13 +22,14 @@ export const adminApi = {
   configuracoes: () => request<ConfiguracaoAgenda[]>("/admin/configuracoes", { headers: auth() }),
   salvar: (configuracoes: ConfiguracaoEntrada[]) =>
     request<void>("/admin/configuracoes", { method: "PUT", body: { configuracoes }, headers: auth() }),
-  guiches: () => request<Guiches>("/admin/guiches", { headers: auth() }),
-  salvarGuiches: (guiche_1_agenda_id_sgg: string | null, guiche_2_agenda_id_sgg: string | null) =>
-    request<void>("/admin/guiches", {
+  totem: () => request<ConfiguracaoTotem>("/admin/totem", { headers: auth() }),
+  salvarTotem: (modo: ModoTotem, agendas_recepcao: string[], agenda_encaixe_id_sgg: string | null) =>
+    request<void>("/admin/totem", {
       method: "PUT",
-      body: { guiche_1_agenda_id_sgg, guiche_2_agenda_id_sgg },
+      body: { modo, agendas_recepcao, agenda_encaixe_id_sgg },
       headers: auth(),
     }),
+  manutencao: () => request<{ retencao_logs_dias: number }>("/admin/manutencao", { headers: auth() }),
   sincronizar: () =>
     request<{ agendas: number; locais: number }>("/admin/sincronizar", { method: "POST", headers: auth() }),
   statusSincronizacao: () => request<StatusSincronizacao>("/admin/sincronizacao", { headers: auth() }),

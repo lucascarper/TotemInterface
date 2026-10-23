@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -35,14 +36,25 @@ def salvar_configuracoes(body: schemas.SalvarConfiguracoesRequest, container: Co
     )
 
 
-@protegido.get("/guiches", response_model=schemas.GuichesResponse)
-def obter_guiches(container: ContainerDep):
-    return schemas.GuichesResponse(**asdict(container.obter_guiches().executar()))
+@protegido.get("/totem", response_model=schemas.ConfiguracaoTotemResponse)
+def obter_totem(container: ContainerDep):
+    return schemas.ConfiguracaoTotemResponse(**asdict(container.obter_totem().executar()))
 
 
-@protegido.put("/guiches", status_code=status.HTTP_204_NO_CONTENT)
-def salvar_guiches(body: schemas.SalvarGuichesRequest, container: ContainerDep):
-    container.salvar_guiches().executar(body.guiche_1_agenda_id_sgg, body.guiche_2_agenda_id_sgg)
+@protegido.put("/totem", status_code=status.HTTP_204_NO_CONTENT)
+def salvar_totem(
+    body: schemas.SalvarConfiguracaoTotemRequest,
+    container: ContainerDep,
+    usuario: Annotated[str, Depends(require_admin)],
+):
+    container.salvar_totem().executar(
+        body.modo, body.agendas_recepcao, body.agenda_encaixe_id_sgg, usuario
+    )
+
+
+@protegido.get("/manutencao", response_model=schemas.ManutencaoResponse)
+def manutencao(container: ContainerDep):
+    return schemas.ManutencaoResponse(retencao_logs_dias=container.settings.retencao_logs_dias)
 
 
 @protegido.post("/sincronizar", response_model=schemas.SincronizacaoResponse)

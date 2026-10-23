@@ -6,32 +6,33 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import datetime
 
-from app.domain.entities import Agendamento, Paciente, StatusAgendamento
+from app.domain.entities import Agendamento, ConfiguracaoTotem, Paciente, StatusAgendamento
 from app.domain.ports import SggGateway
 
 STATUS_ELEGIVEIS_CHECKIN = {StatusAgendamento.AGENDADO}
 STATUS_JA_EM_FILA = {StatusAgendamento.AGUARDANDO, StatusAgendamento.EM_ATENDIMENTO}
 
 
-def agendas_consultadas(configs, guiches) -> list[str]:
-    """Monitoradas + os dois guichês de atendimento.
+def agendas_consultadas(configs, totem: ConfiguracaoTotem) -> list[str]:
+    """Modo de criação: monitoradas + agendas da recepção.
 
-    O check-in sempre cria (ou encontra) o registro de chegada num guichê, então
-    os dois precisam entrar na busca: senão um segundo check-in no mesmo dia
-    tentaria criar outro registro lá, e o SGG recusaria (D16026).
+    O check-in cria (ou encontra) o registro de chegada numa agenda da recepção, então todas
+    precisam entrar na busca: senão um segundo check-in no mesmo dia tentaria criar outro
+    registro lá, e o SGG recusaria (D16026).
     """
-    ids = [c.agenda_id_sgg for c in configs]
-    ids += [g for g in (guiches.guiche_1_agenda_id_sgg, guiches.guiche_2_agenda_id_sgg) if g]
+    ids = [c.agenda_id_sgg for c in configs] + list(totem.agendas_recepcao)
     return list(dict.fromkeys(ids))
 
 
-def bloqueia_nova_chegada(agendamento: Agendamento, guiche_ids: set[str]) -> bool:
+def bloqueia_nova_chegada(agendamento: Agendamento, recepcao_ids: set[str]) -> bool:
     """Registro de chegada que ainda não foi atendido impede outra chegada no mesmo dia.
 
-    Registro já atendido no guichê não bloqueia: o paciente pode voltar a ser atendido.
+    Na recepção, registro já atendido não bloqueia (o paciente pode voltar a ser atendido), e
+    agendamento ainda Agendado também não: é um agendamento marcado com antecedência, não uma
+    chegada.
     """
-    if agendamento.agenda_id_sgg in guiche_ids:
-        return agendamento.status != StatusAgendamento.ATENDIDO
+    if agendamento.agenda_id_sgg in recepcao_ids:
+        return agendamento.status not in {StatusAgendamento.ATENDIDO, StatusAgendamento.AGENDADO}
     return agendamento.status in STATUS_JA_EM_FILA
 
 

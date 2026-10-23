@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from app.domain.entities import ResultadoCheckin, TipoAtendimento
+from app.domain.entities import ModoTotem, ResultadoCheckin, TipoAtendimento
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,11 +54,18 @@ class ConfiguracaoAgendaSaidaDTO:
 
 
 @dataclass(frozen=True, slots=True)
-class ConfiguracaoGuichesDTO:
-    guiche_1_agenda_id_sgg: str | None
-    guiche_1_agenda_nome: str | None
-    guiche_2_agenda_id_sgg: str | None
-    guiche_2_agenda_nome: str | None
+class AgendaResumoDTO:
+    agenda_id_sgg: str
+    agenda_nome: str
+    ativa: bool
+    por_ordem_chegada: bool
+
+
+@dataclass(frozen=True, slots=True)
+class ConfiguracaoTotemDTO:
+    modo: ModoTotem
+    agendas_recepcao: list[AgendaResumoDTO]
+    agenda_encaixe: AgendaResumoDTO | None
 
 
 @dataclass(frozen=True, slots=True)
