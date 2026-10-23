@@ -15,6 +15,16 @@ def build_engine(settings: Settings):
     return create_engine(settings.database_url, **kwargs)
 
 
+def compactar_sqlite(engine) -> bool:
+    """VACUUM no SQLite (apagar linhas não diminui o arquivo). No PostgreSQL não faz nada:
+    o autovacuum já cuida disso."""
+    if engine.dialect.name != "sqlite":
+        return False
+    with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+        conn.exec_driver_sql("VACUUM")
+    return True
+
+
 def build_session_factory(engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 

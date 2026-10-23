@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from app.application.dto import ResultadoSincronizacaoDTO
-from app.domain.entities import ConfiguracaoAgenda, ConfiguracaoGuiches, LogOperacao, TipoOperacao
+from app.domain.entities import ConfiguracaoAgenda, LogOperacao, TipoOperacao
 from app.domain.exceptions import SggIndisponivelError
 from app.domain.ports import Clock, SggGateway, UnitOfWork
 
@@ -54,35 +54,30 @@ class SincronizarAgendasUseCase:
                     configuracoes.append(ConfiguracaoAgenda(agenda_id_sgg=id_sgg))
             uow.configuracoes.salvar_todas(configuracoes)
 
-            # Guichê apontando para uma agenda excluída ou inativa: some sozinho, para o
-            # check-in não continuar tentando escrever numa agenda que já não existe mais.
-            guiches = uow.guiches.obter()
-            g1 = guiches.guiche_1_agenda_id_sgg
-            g2 = guiches.guiche_2_agenda_id_sgg
-            novo_g1 = g1 if g1 in ativas else None
-            novo_g2 = g2 if g2 in ativas else None
-            if novo_g1 != g1 or novo_g2 != g2:
+            # Recepção ou encaixe apontando para uma agenda excluída ou inativa: some sozinho,
+            # para o check-in não continuar tentando escrever numa agenda que já não existe.
+            totem = uow.totem.obter()
+            recepcao = [a for a in totem.agendas_recepcao if a in ativas]
+            encaixe = totem.agenda_encaixe_id_sgg if totem.agenda_encaixe_id_sgg in ativas else None
+            if recepcao != totem.agendas_recepcao or encaixe != totem.agenda_encaixe_id_sgg:
                 limpas += 1
-                uow.guiches.salvar(
-                    ConfiguracaoGuiches(novo_g1, novo_g2, guiches.ultimo_guiche_usado)
-                )
+                totem.agendas_recepcao = recepcao
+                totem.agenda_encaixe_id_sgg = encaixe
+                if totem.ultima_recepcao_usada not in recepcao:
+                    totem.ultima_recepcao_usada = None
+                uow.totem.salvar(totem)
 
+            # Sucesso não vai para a auditoria: a cada poucos minutos, só esconderia os
+            # eventos de paciente. Fica apenas a última execução, mostrada no painel.
             uow.sincronizacoes.registrar_execucao(
                 True, f"{len(agendas)} agendas, {len(locais)} locais"
             )
-            uow.logs.registrar(
-                LogOperacao(
-                    TipoOperacao.SINCRONIZACAO,
-                    True,
-                    "Sincronização concluída",
-                    detalhes={
-                        "agendas": len(agendas),
-                        "locais": len(locais),
-                        "configuracoes_limpas": limpas,
-                    },
-                )
-            )
             uow.commit()
 
-        logger.info("Sincronização: %d agendas, %d locais", len(agendas), len(locais))
+        logger.info(
+            "Sincronização: %d agendas, %d locais, %d configurações limpas",
+            len(agendas),
+            len(locais),
+            limpas,
+        )
         return ResultadoSincronizacaoDTO(len(agendas), len(locais), agora)

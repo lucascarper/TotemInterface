@@ -21,36 +21,50 @@ incerteza real do projeto — o contrato da API do SGG — em um ponto de troca.
 
 | Camada | Pasta | Depende de | Conteúdo |
 |---|---|---|---|
-| Domínio | `domain/` | nada | `Cpf` (validação + máscara), `Paciente`, `Agenda`, `Agendamento`, `ConfiguracaoAgenda`, `ConfiguracaoGuiches`, `LogOperacao`; exceções com mensagens seguras para tela pública; **portas** `SggGateway`, repositórios, `UnitOfWork`, `Clock`. |
-| Aplicação | `application/` | domínio | Um caso de uso por operação do documento: `SincronizarAgendas` (RF01), `IdentificarPaciente` (RF05–07, RF10), `RealizarCheckin` (RF08–09), `Listar/SalvarConfiguracoes` (RF02), `Obter/SalvarGuiches`, `ListarLogs`. |
-| Infraestrutura | `infrastructure/` | domínio | `SggFakeGateway` (memória), `SggHttpGateway` + `mappers.py` (API real), repositórios SQLAlchemy, `SqlAlchemyUnitOfWork`, `SyncScheduler`. |
+| Domínio | `domain/` | nada | `Cpf` (validação + máscara), `Paciente`, `Agenda`, `Agendamento`, `ConfiguracaoAgenda`, `ConfiguracaoTotem` (modo, agendas da recepção, encaixe), `LogOperacao`; exceções com mensagens seguras para tela pública; **portas** `SggGateway`, repositórios, `UnitOfWork`, `Clock`. |
+| Aplicação | `application/` | domínio | Um caso de uso por operação do documento: `SincronizarAgendas` (RF01), `IdentificarPaciente` (RF05–07, RF10), `RealizarCheckin` (RF08–09), `Listar/SalvarConfiguracoes` (RF02), `Obter/SalvarConfiguracaoTotem`, `LimparDados`, `ListarLogs`. |
+| Infraestrutura | `infrastructure/` | domínio | `SggFakeGateway` (memória), `SggHttpGateway` + `mappers.py` (API real), repositórios SQLAlchemy, `SqlAlchemyUnitOfWork`, `Agendador` (sincronização e limpeza diária). |
 | API | `api/` | aplicação | `container.py` (composition root), `deps.py` (JWT admin, chave do totem), `schemas.py` (Pydantic), routers `totem`, `admin`, `health`, `errors.py` (exceção de domínio → HTTP). |
 
 Regras que valem a pena conhecer:
 
-* **Somente agendas monitoradas** (e os dois guichês) são consultadas (RF02).
-* O check-in **sempre cria um novo registro** num dos dois guichês, já `AGUARDANDO` — nunca
-  altera o agendamento original (RF08/RF09). O paciente vê o horário/agenda originais na
-  confirmação; o guichê é onde a recepção acompanha as chegadas. Veja **Guichês de
-  atendimento** abaixo para a regra de distribuição entre os dois.
-* Já existe um registro de chegada hoje que **ainda não foi atendido** (`AGUARDANDO`,
-  `EM_ATENDIMENTO` ou outro status diferente de `ATENDIDO`, no guichê) → `409 CHECKIN_JA_REALIZADO`
-  (não duplica). Registro já `ATENDIDO` não bloqueia: o paciente que sai e volta é atendido de novo.
-* Essa nova chegada vai para um guichê **onde o paciente ainda não tem registro hoje**: o SGG recusa
-  (D16026) dois registros do mesmo paciente na mesma agenda de ordem de chegada no mesmo dia, mesmo
-  com o anterior atendido. O Preferencial, se o Guichê 1 já tiver registro dele, vai para o 2. Se ele
-  já tiver registro nos dois guichês → `409 ENCAIXE_NAO_CONFIGURADO`, orientando a recepção.
-* Nenhum guichê configurado → `409 ENCAIXE_NAO_CONFIGURADO`, mesmo havendo agendamento — pelo
-  menos o Guichê 1 é sempre obrigatório agora.
-* O registro do guichê nasce **no mesmo funcionário e na mesma empresa do agendamento encontrado**
+* **Dois modos de check-in**, escolhidos no painel (`ModoTotem`, padrão: criação). As **agendas da
+  recepção** são uma lista ordenada única, usada pelos dois modos, e aceitam ordem de chegada ou
+  hora marcada.
+* **Modo de criação** (o original): consulta as agendas monitoradas e as da recepção, e **sempre
+  cria um novo registro** numa agenda da recepção, já `AGUARDANDO`, sem alterar o agendamento
+  original (RF08/RF09). O paciente vê o horário/agenda originais na confirmação. Veja **Agendas da
+  recepção** abaixo para a distribuição.
+* **Modo de edição**: consulta só as agendas da recepção (as monitoradas ficam salvas, mas são
+  ignoradas). O **primeiro agendamento `AGENDADO` do dia** ali vira `AGUARDANDO`, e nada é criado.
+  Sem agendamento `AGENDADO` (inclusive Faltou, Cancelado ou já atendido que voltou), cria o encaixe
+  na **agenda de encaixe** (por ordem de chegada, obrigatória neste modo), já `AGUARDANDO`. Como o
+  `PUT` do SGG só altera `situacao`, o Preferencial de um agendamento editado aparece só na auditoria.
+* Chegada que **ainda não foi atendida** → `409 CHECKIN_JA_REALIZADO` (não duplica). Na criação:
+  registro da recepção em qualquer status diferente de `ATENDIDO` e `AGENDADO` (Agendado na recepção
+  é agendamento marcado com antecedência, não chegada). Na edição: agendamento da recepção
+  `AGUARDANDO`/`EM_ATENDIMENTO` ou registro na agenda de encaixe ainda não atendido. Vale também o
+  que foi feito antes de trocar o modo.
+* Registro já `ATENDIDO` não bloqueia: o paciente que sai e volta é atendido de novo. Na criação, a
+  nova chegada vai para uma agenda da recepção **onde ele ainda não tem registro hoje** (o SGG recusa,
+  D16026, dois registros do mesmo paciente na mesma agenda de ordem de chegada no mesmo dia). Na
+  edição, vai para a agenda de encaixe, que só aceita um por dia. Sem destino possível, ou sem agenda
+  da recepção configurada → `409 ENCAIXE_NAO_CONFIGURADO`, orientando a recepção.
+* No modo de criação, o registro nasce **no mesmo funcionário e na mesma empresa do agendamento encontrado**
   nas agendas de consultório (o agendamento traz `id_funcionario` e `id_empresa`). A busca do
   agendamento do dia cobre todos os vínculos do CPF, não só o preferido. Sem agendamento
   (encaixe), vale o vínculo preferido.
 * Empresa que será usada inativa no SGG (e, sem agendamento, nenhum outro vínculo do CPF numa
-  empresa ativa) → `409 EMPRESA_INATIVA`, sem criar nada no guichê. Veja o vínculo no adaptador
+  empresa ativa) → `409 EMPRESA_INATIVA`, sem criar nem editar nada. Veja o vínculo no adaptador
   do SGG abaixo.
 * Paciente inexistente → `404 PACIENTE_NAO_ENCONTRADO` com orientação para a recepção (RF10).
-* Toda operação grava `logs_operacao` com o **CPF mascarado** (auditabilidade + privacidade).
+* Toda operação grava `logs_operacao` com o **CPF mascarado** (auditabilidade + privacidade). A
+  troca de modo também é registrada, com o usuário que trocou.
+* **Limpeza diária** (`LimparDados`, às 03:00 e ao iniciar a API): apaga eventos mais antigos que
+  `RETENCAO_LOGS_DIAS` (padrão 30) e agendas inativas que não estão em nenhuma configuração; no
+  SQLite compacta o arquivo (`VACUUM`) ao iniciar e aos domingos. Sincronização bem-sucedida não vai
+  para a auditoria, e `sincronizacoes` guarda só a última execução. O agendador roda uma rotina de
+  cada vez (o `VACUUM` falha com outra transação aberta).
 
 ## Adaptador da API real do SGG
 
@@ -100,7 +114,7 @@ criação de encaixe (`POST`) e mudança de situação (`PUT`).
 * `features/totem/machine.ts` — reducer puro com todas as telas e transições (RF04→RF11).
   Fácil de testar e de raciocinar; os efeitos (chamadas HTTP, timers) ficam em `TotemApp.tsx`.
 * `features/totem/screens/*` — uma tela por estado; fontes grandes, poucos toques, teclado numérico próprio.
-* `features/admin/*` — login, guichês de atendimento, tabela de agendas monitoradas e auditoria.
+* `features/admin/*` — login, configuração do totem (`TotemCard`: modo, agendas da recepção e encaixe), tabela de agendas monitoradas e auditoria.
 * `api/client.ts` — `ApiError` tipado (`codigo`, `mensagem`, `status`) para as telas decidirem o que mostrar.
 * PWA (`vite-plugin-pwa`) em modo `fullscreen`; a API nunca é cacheada (`NetworkOnly`).
 
@@ -155,42 +169,33 @@ precisa se destacar por convenção em dois lugares:
 `senha` do agendamento (a API aceita `PUT` nele). Descartado: confirmado com a operação que a
 tela de chamada do SGG segue a ordem de chegada/criação do registro, não o número da senha — e a
 API não permite definir a hora de criação. Não há alavanca dentro de uma agenda para fazer
-alguém "furar a fila"; a única forma real de priorizar é o Guichê 1 dedicado, abaixo.
+alguém "furar a fila"; a única forma real de priorizar é a 1ª agenda da recepção, abaixo.
 
-## Guichês de atendimento
+## Agendas da recepção
 
 Motivação operacional: o SGG só permite uma pessoa "Em Atendimento" por agenda ao mesmo tempo.
-Com dois atendentes numa única agenda, um atendimento longo trava o outro atendente, que não
-consegue chamar o próximo. A solução é ter **duas agendas por ordem de chegada no SGG, uma por
-guichê físico**, e o totem decide para qual das duas cada check-in vai.
+Com dois atendentes numa única agenda, um atendimento longo trava o outro, que não consegue chamar
+o próximo. Por isso a recepção tem **uma agenda por guichê físico**, quantas forem necessárias, e no
+modo de criação o totem decide para qual cada check-in vai. A lista substituiu os dois guichês fixos
+da versão anterior (migração `0004`, que leva Guichê 1 e Guichê 2 para as duas primeiras posições).
 
-Diferente do antigo modelo por agenda monitorada (removido), os guichês são **globais e únicos**:
-todo paciente passa por um dos dois, não importa em qual agenda estava agendado. Configuração em
-`ConfiguracaoGuiches` (tabela `configuracao_guiches`, linha única) — dois dropdowns no painel
-(`GuichesCard` em `ConfigPage.tsx`), restritos a agendas ativas por ordem de chegada.
+Configuração em `ConfiguracaoTotem` (tabela `configuracao_totem`, linha única), no cartão
+`TotemCard` do painel. Distribuição no modo de criação (`RealizarCheckinUseCase._resolver_recepcao`):
 
-Distribuição (`RealizarCheckinUseCase._resolver_guiche`):
-
-1. **Preferencial vai sempre para o Guichê 1.** Não participa do balanceamento por carga —
-   por isso não pode substituir sozinho o destaque textual/visual da seção acima: se o Guichê 1
-   estiver mais carregado, o preferencial ainda vai para lá, só que priorizado ali dentro pelo
-   destaque visual/manual da equipe, não por reordenação automática do SGG (ver nota acima).
-2. **Normal vai para o guichê com menos gente `AGUARDANDO` agora** — consulta ao vivo ao SGG
-   (`listar_agendamentos_da_agenda`, mesma leitura reintroduzida por este motivo depois de ter
-   sido removida junto com a funcionalidade de encaixe automático periódico). Em caso de empate,
-   alterna com o último guichê escolhido (round-robin), persistido em
-   `ConfiguracaoGuiches.ultimo_guiche_usado`.
-3. **Com um único guichê configurado**, todo mundo vai para ele, sem consulta extra ao SGG.
-4. **Sincronização** limpa sozinho um guichê cujo destino tenha sido excluído ou inativado no
-   SGG, do mesmo jeito que já fazia para o encaixe por agenda monitorada.
-
-Guichês reais confirmados no SGG do totem em produção: "Recepção" e "Guichê 2", ambas por ordem
-de chegada.
+1. **Preferencial vai para a 1ª agenda disponível da lista.** Não participa do balanceamento.
+2. **Normal vai para a de menos gente `AGUARDANDO` agora** (consulta ao vivo ao SGG). No empate,
+   vai para a próxima da lista depois da última usada (round-robin), persistida em
+   `ConfiguracaoTotem.ultima_recepcao_usada`.
+3. **Com uma única agenda disponível**, todo mundo vai para ela, sem consulta extra ao SGG.
+4. **Sincronização** tira sozinha da lista (e do encaixe) uma agenda excluída ou inativada no SGG.
 
 ## Banco de dados
 
-Tabelas: `agendas`, `locais_atendimento`, `configuracoes_agenda`, `configuracao_guiches`,
+Tabelas: `agendas`, `locais_atendimento`, `configuracoes_agenda`, `configuracao_totem`,
 `logs_operacao`, `sincronizacoes`. Migrações com Alembic (`backend/alembic`); a revisão "0002" foi
 deliberadamente pulada (veja o comentário em `0003_guiches.py`). Em desenvolvimento,
 `AUTO_CREATE_SCHEMA=true` cria o schema automaticamente em SQLite; em produção use PostgreSQL e
-`alembic upgrade head` (o Dockerfile já faz isso).
+`alembic upgrade head` (o Dockerfile já faz isso). O paliativo na rede local usa `AUTO_CREATE_SCHEMA`
+sobre SQLite, sem Alembic; por isso a migração de dados da `0004` (`persistence/migracoes.py`) também
+roda na inicialização nesse modo. A `0003` usa `DROP COLUMN IF EXISTS`, que só o PostgreSQL entende:
+a cadeia completa do Alembic não roda em SQLite.

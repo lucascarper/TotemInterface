@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from app.domain.entities import ResultadoCheckin, TipoAtendimento, TipoOperacao
+from app.domain.entities import ModoTotem, ResultadoCheckin, TipoAtendimento, TipoOperacao
 
 
 # ---- Totem ---------------------------------------------------------------
@@ -78,16 +78,27 @@ class SalvarConfiguracoesRequest(BaseModel):
     configuracoes: list[ConfiguracaoAgendaEntrada]
 
 
-class GuichesResponse(BaseModel):
-    guiche_1_agenda_id_sgg: str | None
-    guiche_1_agenda_nome: str | None
-    guiche_2_agenda_id_sgg: str | None
-    guiche_2_agenda_nome: str | None
+class AgendaResumo(BaseModel):
+    agenda_id_sgg: str
+    agenda_nome: str
+    ativa: bool
+    por_ordem_chegada: bool
 
 
-class SalvarGuichesRequest(BaseModel):
-    guiche_1_agenda_id_sgg: str | None = None
-    guiche_2_agenda_id_sgg: str | None = None
+class ConfiguracaoTotemResponse(BaseModel):
+    modo: ModoTotem
+    agendas_recepcao: list[AgendaResumo]
+    agenda_encaixe: AgendaResumo | None
+
+
+class SalvarConfiguracaoTotemRequest(BaseModel):
+    modo: ModoTotem
+    agendas_recepcao: list[str] = Field(default_factory=list)
+    agenda_encaixe_id_sgg: str | None = None
+
+
+class ManutencaoResponse(BaseModel):
+    retencao_logs_dias: int
 
 
 class SincronizacaoResponse(BaseModel):

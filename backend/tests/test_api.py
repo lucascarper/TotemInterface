@@ -46,7 +46,7 @@ def test_admin_configuracoes_roundtrip(client, admin_headers):
     r = client.get("/admin/configuracoes", headers=admin_headers)
     assert r.status_code == 200
     itens = r.json()
-    assert len(itens) == 6
+    assert len(itens) == 7
     a1 = next(i for i in itens if i["agenda_id_sgg"] == "A1")
     assert a1["monitorada"] is True
 
@@ -71,47 +71,57 @@ def test_admin_rejeita_agenda_repetida(client, admin_headers):
     assert r.status_code == 400
 
 
-def test_admin_guiches_roundtrip(client, admin_headers):
-    r = client.get("/admin/guiches", headers=admin_headers)
+def test_admin_totem_roundtrip(client, admin_headers):
+    r = client.get("/admin/totem", headers=admin_headers)
     assert r.status_code == 200
-    assert r.json() == {
-        "guiche_1_agenda_id_sgg": "A4",
-        "guiche_1_agenda_nome": "Recepção",
-        "guiche_2_agenda_id_sgg": "A6",
-        "guiche_2_agenda_nome": "Guichê 2",
-    }
+    corpo = r.json()
+    assert corpo["modo"] == "CRIACAO" and corpo["agenda_encaixe"] is None
+    assert [a["agenda_nome"] for a in corpo["agendas_recepcao"]] == ["Recepção", "Guichê 2"]
 
     r = client.put(
-        "/admin/guiches",
-        json={"guiche_1_agenda_id_sgg": "A4", "guiche_2_agenda_id_sgg": None},
+        "/admin/totem",
+        json={"modo": "EDICAO", "agendas_recepcao": ["A6", "A4"], "agenda_encaixe_id_sgg": "A7"},
         headers=admin_headers,
     )
     assert r.status_code == 204, r.text
-    assert (
-        client.get("/admin/guiches", headers=admin_headers).json()["guiche_2_agenda_id_sgg"] is None
-    )
+    corpo = client.get("/admin/totem", headers=admin_headers).json()
+    assert corpo["modo"] == "EDICAO"
+    assert [a["agenda_id_sgg"] for a in corpo["agendas_recepcao"]] == ["A6", "A4"]
+    assert corpo["agenda_encaixe"]["agenda_nome"] == "Encaixe Recepção"
+
+    log = client.get("/admin/logs?limite=1", headers=admin_headers).json()[0]
+    assert log["tipo"] == "CONFIGURACAO" and "admin" in log["mensagem"]
 
 
-def test_admin_guiches_rejeita_agenda_por_hora_marcada(client, admin_headers):
+def test_admin_totem_edicao_exige_agenda_de_encaixe(client, admin_headers):
     r = client.put(
-        "/admin/guiches",
-        json={"guiche_1_agenda_id_sgg": "A1", "guiche_2_agenda_id_sgg": None},
+        "/admin/totem",
+        json={"modo": "EDICAO", "agendas_recepcao": ["A4"], "agenda_encaixe_id_sgg": None},
         headers=admin_headers,
     )
     assert r.status_code == 400
+    assert "encaixe" in r.json()["mensagem"].lower()
+
+
+def test_admin_manutencao_informa_retencao(client, admin_headers):
+    r = client.get("/admin/manutencao", headers=admin_headers)
+    assert r.status_code == 200 and r.json() == {"retencao_logs_dias": 30}
 
 
 def test_admin_sincronizar_e_logs(client, admin_headers):
     r = client.post("/admin/sincronizar", headers=admin_headers)
-    assert r.status_code == 200 and r.json()["agendas"] == 6
+    assert r.status_code == 200 and r.json()["agendas"] == 7
+    # Sincronização bem-sucedida não entra na auditoria (só falhas).
     r = client.get("/admin/logs?limite=10", headers=admin_headers)
-    assert r.status_code == 200 and r.json()[0]["tipo"] == "SINCRONIZACAO"
+    assert r.status_code == 200
+    assert all(item["tipo"] != "SINCRONIZACAO" for item in r.json())
     r = client.get("/admin/sincronizacao", headers=admin_headers)
     assert r.status_code == 200 and r.json()["sucesso"] is True
 
 
 def test_timestamps_de_auditoria_tem_fuso(client, admin_headers):
     client.post("/admin/sincronizar", headers=admin_headers)
+    client.post("/totem/identificar", json={"cpf": "529.982.247-25"})
     item = client.get("/admin/logs?limite=1", headers=admin_headers).json()[0]
     assert item["criado_em"].endswith("+00:00") or item["criado_em"].endswith("Z")
     st = client.get("/admin/sincronizacao", headers=admin_headers).json()

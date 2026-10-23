@@ -28,12 +28,20 @@ class StatusAgendamento(StrEnum):
     OUTRO = "OUTRO"
 
 
+class ModoTotem(StrEnum):
+    """Como o check-in registra a chegada no SGG."""
+
+    CRIACAO = "CRIACAO"  # cria um registro novo numa agenda da recepção
+    EDICAO = "EDICAO"  # muda o agendamento da recepção de Agendado para Aguardando
+
+
 class TipoOperacao(StrEnum):
     BUSCA_PACIENTE = "BUSCA_PACIENTE"
     BUSCA_AGENDAMENTO = "BUSCA_AGENDAMENTO"
     ATUALIZACAO_STATUS = "ATUALIZACAO_STATUS"
     CRIACAO_AGENDAMENTO = "CRIACAO_AGENDAMENTO"
     SINCRONIZACAO = "SINCRONIZACAO"
+    CONFIGURACAO = "CONFIGURACAO"
     ERRO = "ERRO"
     LEGADO = "LEGADO"
     """Tipo de log gravado por uma funcionalidade já removida do código (ex.: encaixe
@@ -42,9 +50,9 @@ class TipoOperacao(StrEnum):
 
 
 class ResultadoCheckin(StrEnum):
-    """Resultado do check-in: sempre cria um registro na fila; isto só distingue a mensagem."""
+    """Resultado do check-in; só distingue a mensagem mostrada ao paciente."""
 
-    AGENDAMENTO_CONFIRMADO = "AGENDAMENTO_CONFIRMADO"  # havia agendamento hoje na origem
+    AGENDAMENTO_CONFIRMADO = "AGENDAMENTO_CONFIRMADO"  # havia agendamento hoje
     ENCAIXE_CRIADO = "ENCAIXE_CRIADO"  # sem agendamento: entrou como encaixe
 
 
@@ -159,19 +167,21 @@ class ConfiguracaoAgenda:
 
 
 @dataclass(slots=True)
-class ConfiguracaoGuiches:
-    """Os dois guichês de atendimento: destino único e compartilhado por todo check-in.
+class ConfiguracaoTotem:
+    """Configuração global do check-in (linha única).
 
-    Diferente da configuração por agenda monitorada, isto é global — não importa em
-    qual agenda o paciente estava agendado, o registro de chegada sempre nasce em um
-    destes dois guichês (agendas por ordem de chegada no SGG).
+    `agendas_recepcao` é ordenada e vale nos dois modos: no de criação é onde o registro de
+    chegada nasce (o Preferencial vai para a primeira); no de edição é onde o agendamento do
+    paciente é procurado. `agenda_encaixe_id_sgg` só é usada no modo de edição, para quem
+    chega sem agendamento na recepção.
     """
 
-    guiche_1_agenda_id_sgg: str | None = None
-    guiche_2_agenda_id_sgg: str | None = None
-    # Último guichê escolhido para um atendimento Normal, para alternar em caso de
-    # empate na carga dos dois guichês (1 ou 2). Preferencial não altera isto.
-    ultimo_guiche_usado: int | None = None
+    modo: ModoTotem = ModoTotem.CRIACAO
+    agendas_recepcao: list[str] = field(default_factory=list)
+    agenda_encaixe_id_sgg: str | None = None
+    # Última agenda da recepção escolhida para um Normal no modo de criação, para alternar em
+    # caso de empate na carga. Preferencial não altera isto.
+    ultima_recepcao_usada: str | None = None
 
 
 @dataclass(slots=True)

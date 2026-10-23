@@ -60,7 +60,7 @@ que você preencheu:
 
 - `https://<url-da-api>/health` responde `{"status":"ok","sgg_mode":"http"}`.
 - `https://<url-do-front>/admin`: entre, clique em **Sincronizar com o SGG**, marque
-  as agendas monitoradas e escolha os guichês. O banco é novo; a configuração do
+  as agendas monitoradas e configure as agendas da recepção. O banco é novo; a configuração do
   Railway não vem junto.
 - `https://<url-do-front>/totem`: faça um check-in de teste.
 - No tablet, abra a URL nova do totem (e reinstale o atalho/PWA, se usava).

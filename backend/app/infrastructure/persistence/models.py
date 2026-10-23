@@ -41,15 +41,17 @@ class ConfiguracaoAgendaModel(Base):
     monitorada: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
-class ConfiguracaoGuichesModel(Base):
-    """Linha única (id fixo = 1): os dois guichês de atendimento, globais."""
+class ConfiguracaoTotemModel(Base):
+    """Linha única (id fixo = 1): modo do totem, agendas da recepção e agenda de encaixe."""
 
-    __tablename__ = "configuracao_guiches"
+    __tablename__ = "configuracao_totem"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    guiche_1_agenda_id_sgg: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    guiche_2_agenda_id_sgg: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    ultimo_guiche_usado: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    modo: Mapped[str] = mapped_column(String(20), nullable=False, default="CRIACAO")
+    # Lista ordenada de ids de agenda do SGG.
+    agendas_recepcao: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    agenda_encaixe_id_sgg: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ultima_recepcao_usada: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class LogOperacaoModel(Base):

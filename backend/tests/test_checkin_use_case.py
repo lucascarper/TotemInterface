@@ -5,7 +5,7 @@ import pytest
 from app.domain.entities import (
     Agendamento,
     ConfiguracaoAgenda,
-    ConfiguracaoGuiches,
+    ConfiguracaoTotem,
     ResultadoCheckin,
     StatusAgendamento,
     TipoAtendimento,
@@ -326,45 +326,55 @@ def test_checkin_normal_vai_para_guiche_menos_carregado(container_configurado, s
     assert sgg.obter_agendamento(dto.agendamento_id_sgg).agenda_id_sgg == "A6"
 
 
-def test_checkin_normal_persiste_ultimo_guiche_para_desempate(container_configurado):
+def test_checkin_normal_persiste_ultima_recepcao_para_desempate(container_configurado):
     container_configurado.realizar_checkin().executar(JOAO, TipoAtendimento.NORMAL)
     with container_configurado.uow as uow:
-        assert uow.guiches.obter().ultimo_guiche_usado == 1  # empate inicial resolve para o 1
+        assert uow.totem.obter().ultima_recepcao_usada == "A4"  # empate inicial: a 1ª da lista
 
 
 def test_checkin_preferencial_nao_altera_o_desempate(container_configurado):
     with container_configurado.uow as uow:
-        cfg = uow.guiches.obter()
-        cfg.ultimo_guiche_usado = 2
-        uow.guiches.salvar(cfg)
+        cfg = uow.totem.obter()
+        cfg.ultima_recepcao_usada = "A6"
+        uow.totem.salvar(cfg)
         uow.commit()
     container_configurado.realizar_checkin().executar(MARIA, TipoAtendimento.PREFERENCIAL)
     with container_configurado.uow as uow:
-        assert uow.guiches.obter().ultimo_guiche_usado == 2  # não mudou
+        assert uow.totem.obter().ultima_recepcao_usada == "A6"  # não mudou
 
 
-def test_resolver_guiche_empate_alterna_por_ultimo_usado(container_configurado):
+def test_resolver_recepcao_empate_alterna_a_partir_da_ultima_usada(container_configurado):
     uc = container_configurado.realizar_checkin()
-    sem_historico = ConfiguracaoGuiches("A4", "A6")
-    assert uc._resolver_guiche(sem_historico, TipoAtendimento.NORMAL, HOJE) == ("A4", 1)
 
-    usou_1 = ConfiguracaoGuiches("A4", "A6", ultimo_guiche_usado=1)
-    assert uc._resolver_guiche(usou_1, TipoAtendimento.NORMAL, HOJE) == ("A6", 2)
+    def resolver(ultima):
+        cfg = ConfiguracaoTotem(agendas_recepcao=["A4", "A6", "A7"], ultima_recepcao_usada=ultima)
+        return uc._resolver_recepcao(cfg, TipoAtendimento.NORMAL, HOJE)
 
-    usou_2 = ConfiguracaoGuiches("A4", "A6", ultimo_guiche_usado=2)
-    assert uc._resolver_guiche(usou_2, TipoAtendimento.NORMAL, HOJE) == ("A4", 1)
+    assert resolver(None) == "A4"
+    assert resolver("A4") == "A6"
+    assert resolver("A6") == "A7"
+    assert resolver("A7") == "A4"  # dá a volta no fim da lista
 
 
-def test_resolver_guiche_com_um_unico_configurado(container_configurado):
+def test_resolver_recepcao_menor_fila_entre_varias(container_configurado, sgg):
+    for ag in _aguardando("A4", 2, "F") + _aguardando("A6", 1, "G"):
+        sgg.adicionar_agendamento(ag)
     uc = container_configurado.realizar_checkin()
-    so_guiche_1 = ConfiguracaoGuiches("A4", None)
-    assert uc._resolver_guiche(so_guiche_1, TipoAtendimento.PREFERENCIAL, HOJE) == ("A4", 1)
-    assert uc._resolver_guiche(so_guiche_1, TipoAtendimento.NORMAL, HOJE) == ("A4", 1)
-
-    so_guiche_2 = ConfiguracaoGuiches(None, "A6")
-    assert uc._resolver_guiche(so_guiche_2, TipoAtendimento.NORMAL, HOJE) == ("A6", 2)
+    cfg = ConfiguracaoTotem(agendas_recepcao=["A4", "A6", "A7"])
+    assert uc._resolver_recepcao(cfg, TipoAtendimento.NORMAL, HOJE) == "A7"
 
 
-def test_resolver_guiche_nenhum_configurado(container_configurado):
+def test_resolver_recepcao_preferencial_vai_para_a_primeira_disponivel(container_configurado):
     uc = container_configurado.realizar_checkin()
-    assert uc._resolver_guiche(ConfiguracaoGuiches(), TipoAtendimento.NORMAL, HOJE) == (None, None)
+    cfg = ConfiguracaoTotem(agendas_recepcao=["A4", "A6", "A7"])
+    assert uc._resolver_recepcao(cfg, TipoAtendimento.PREFERENCIAL, HOJE) == "A4"
+    assert uc._resolver_recepcao(cfg, TipoAtendimento.PREFERENCIAL, HOJE, excluir={"A4"}) == "A6"
+
+
+def test_resolver_recepcao_com_uma_unica_ou_nenhuma(container_configurado):
+    uc = container_configurado.realizar_checkin()
+    so_uma = ConfiguracaoTotem(agendas_recepcao=["A6"])
+    assert uc._resolver_recepcao(so_uma, TipoAtendimento.PREFERENCIAL, HOJE) == "A6"
+    assert uc._resolver_recepcao(so_uma, TipoAtendimento.NORMAL, HOJE) == "A6"
+    assert uc._resolver_recepcao(ConfiguracaoTotem(), TipoAtendimento.NORMAL, HOJE) is None
+    assert uc._resolver_recepcao(so_uma, TipoAtendimento.NORMAL, HOJE, excluir={"A6"}) is None

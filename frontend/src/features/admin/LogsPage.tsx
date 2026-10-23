@@ -11,6 +11,7 @@ const ROTULOS: Record<string, string> = {
   ATUALIZACAO_STATUS: "Atualização de status",
   CRIACAO_AGENDAMENTO: "Criação de encaixe",
   SINCRONIZACAO: "Sincronização",
+  CONFIGURACAO: "Configuração",
   ERRO: "Erro",
   LEGADO: "Funcionalidade removida",
 };
@@ -20,6 +21,7 @@ export function LogsPage() {
   const [filtro, setFiltro] = useState<"todos" | "sucesso" | "falha">("todos");
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [retencao, setRetencao] = useState<number | null>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -35,6 +37,10 @@ export function LogsPage() {
   }, []);
 
   useEffect(() => {
+    adminApi.manutencao().then((m) => setRetencao(m.retencao_logs_dias)).catch(() => setRetencao(null));
+  }, []);
+
+  useEffect(() => {
     carregar();
     const t = window.setInterval(carregar, 30000);
     return () => window.clearInterval(t);
@@ -47,7 +53,10 @@ export function LogsPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Auditoria de operações</h1>
-          <p className="mt-1 text-sm text-ink-muted">Cada busca, atualização, encaixe e erro registrado pelo totem. CPFs aparecem mascarados.</p>
+          <p className="mt-1 text-sm text-ink-muted">
+            Cada busca, atualização, encaixe e erro registrado pelo totem. CPFs aparecem mascarados.
+            {retencao !== null && ` Registros mantidos por ${retencao} dias.`}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <select className="field w-auto py-2" value={filtro} onChange={(e) => setFiltro(e.target.value as typeof filtro)}>
