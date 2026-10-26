@@ -72,10 +72,14 @@ class SggHttpGateway:
 
     # ------------------------------------------------------------------ infra
     def _request(self, method: str, path: str, body: dict) -> dict:
+        # Consultas levam os filtros na URL: desde 26/10/2026 o CloudFront na frente do SGG
+        # responde 403 a GET com corpo JSON. Escritas continuam com corpo.
+        if method == "GET":
+            kwargs: dict = {"params": body}
+        else:
+            kwargs = {"json": body, "headers": {"Content-Type": "application/json"}}
         try:
-            resp = self._client.request(
-                method, path, json=body, headers={"Content-Type": "application/json"}
-            )
+            resp = self._client.request(method, path, **kwargs)
         except httpx.HTTPError as exc:
             logger.error("Falha de rede com o SGG: %s %s (%s)", method, path, exc)
             raise SggIndisponivelError(f"Falha de comunicação com o SGG: {exc}") from exc
@@ -115,8 +119,9 @@ class SggHttpGateway:
         itens: list[dict] = []
         vistos: set[str] = set()
         for pagina in range(MAX_PAGINAS):
-            body = {**filtros, "paginador": {"pagina": pagina, "tamanho": TAMANHO_PAGINA}}
-            data = self._request("GET", path, body)
+            data = self._request(
+                "GET", path, {**filtros, "pagina": pagina, "tamanho": TAMANHO_PAGINA}
+            )
             status = str(data.get("statusCode", STATUS_OK))
             if status == STATUS_VAZIO:
                 break
@@ -156,6 +161,9 @@ class SggHttpGateway:
         return agendas
 
     def _agenda_pelo_nome(self, nome: str) -> Agenda | None:
+        # O cadastro de agendas vem com o nome aparado, mas os agendamentos podem trazer o
+        # nome com espaço no fim (ex.: "Audiometria "); sem isso, eles seriam descartados.
+        nome = nome.strip()
         if nome not in self._agenda_por_nome:
             self._carregar_agendas()
         return self._agenda_por_nome.get(nome)
