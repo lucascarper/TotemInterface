@@ -62,6 +62,15 @@ def gateway(handler):
 
 
 def body_of(req: httpx.Request) -> dict:
+    if req.method == "GET":
+        assert not req.content, "o CloudFront do SGG responde 403 a GET com corpo"
+        dados = dict(req.url.params)
+        if "pagina" in dados:
+            dados["paginador"] = {
+                "pagina": int(dados.pop("pagina")),
+                "tamanho": int(dados.pop("tamanho")),
+            }
+        return dados
     return json.loads(req.content)
 
 
@@ -608,3 +617,38 @@ def test_codigo_de_negocio_que_comeca_com_a_nao_e_falha_de_infraestrutura():
     with pytest.raises(SggOperacaoRecusadaError) as exc:
         gateway(handler)._obter_agendamento("999")
     assert exc.value.codigo_sgg == "AG016"
+
+
+def test_agendamento_com_espaco_no_nome_da_agenda_e_reconhecido():
+    """Caso real (26/10/2026): o agendamento traz "Audiometria " e o cadastro, "Audiometria"."""
+    agenda = {
+        "id_agenda": "61",
+        "nome": "Audiometria ",
+        "situacao": "Ativa",
+        "forma_atendimento": "Chegada",
+    }
+
+    def handler(req):
+        if req.url.path.endswith("/agenda/"):
+            return httpx.Response(200, json=ok([agenda]))
+        return httpx.Response(
+            200,
+            json=ok(
+                [
+                    {
+                        "id_agendamento": "9",
+                        "id_funcionario": "2",
+                        "agenda": "Audiometria ",
+                        "data_agendamento": "2026-10-26",
+                        "hora_agendamento": "",
+                        "data_hora_criacao": "2026-10-26 08:00:00",
+                        "situacao": "Agendado",
+                    }
+                ]
+            ),
+        )
+
+    gw = gateway(handler)
+    assert [a.nome for a in gw.listar_agendas()] == ["Audiometria"]
+    ags = gw.listar_agendamentos("2", ["61"], date(2026, 10, 26))
+    assert [(a.id_sgg, a.agenda_id_sgg) for a in ags] == [("9", "61")]
