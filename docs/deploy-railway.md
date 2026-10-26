@@ -3,9 +3,7 @@
 O projeto sobe no [Railway](https://railway.com) como **três serviços** dentro
 de um mesmo projeto: PostgreSQL (add-on gerenciado), a API (`backend/`) e o
 front (`frontend/`). Cada serviço ganha seu próprio domínio público HTTPS, por
-isso front e API são origens diferentes — a comunicação entre eles usa CORS,
-diferente do deploy via `docker-compose` (que serve tudo pela mesma origem
-com nginx fazendo proxy).
+isso front e API são origens diferentes — a comunicação entre eles usa CORS.
 
 Arquivos preparados no repositório:
 
@@ -141,12 +139,6 @@ dois serviços (ou só do que mudou, se você configurar "Watch Paths" em
   container. `DATABASE_URL` normaliza sozinho `postgres://` e `postgresql://`
   (formatos que o Railway costuma injetar) para o driver `psycopg` (v3) que
   este projeto usa — não é preciso editar a URL manualmente.
-- **Front sem nginx**: como cada serviço Railway já tem seu próprio domínio
-  público, o proxy same-origin do `frontend/Dockerfile` (usado no
-  docker-compose) não se aplica aqui. `Dockerfile.railway` builda o front e
-  serve os arquivos estáticos com `serve`, escutando na porta dinâmica que o
-  Railway injeta (`$PORT`) — nginx exigiria um passo extra de template para
-  isso, que o `serve` já faz nativamente.
 - **CORS cross-origin**: como front e API ficam em domínios diferentes, o
   `CORS_ORIGINS` da API precisa listar o domínio do front. Fora do
   `APP_ENV=development`, o backend não aceita origens fora dessa lista (veja
@@ -157,9 +149,3 @@ dois serviços (ou só do que mudou, se você configurar "Watch Paths" em
 - **Limite de plano**: no plano gratuito do Railway os serviços podem
   hibernar após um período sem tráfego; a sincronização periódica com o SGG
   só roda enquanto o serviço da API estiver ativo.
-
-## Se preferir Docker Compose em vez do Railway
-
-O `docker-compose.yml` na raiz continua funcionando como está (PostgreSQL +
-API + nginx na mesma origem) para rodar em qualquer host com Docker — use-o
-se decidir hospedar em uma VPS própria em vez do Railway.

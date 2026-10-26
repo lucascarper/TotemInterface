@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -28,10 +26,3 @@ def compactar_sqlite(engine) -> bool:
 def build_session_factory(engine) -> sessionmaker[Session]:
     return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
-
-def session_scope(factory: sessionmaker[Session]) -> Iterator[Session]:
-    session = factory()
-    try:
-        yield session
-    finally:
-        session.close()
