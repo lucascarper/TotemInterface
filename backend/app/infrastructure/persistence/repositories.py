@@ -69,10 +69,6 @@ class SqlAgendaRepository:
             stmt = stmt.where(AgendaModel.ativa.is_(True))
         return [self._to_entity(m) for m in self._s.scalars(stmt).all()]
 
-    def obter(self, agenda_id_sgg: str) -> Agenda | None:
-        m = self._s.get(AgendaModel, agenda_id_sgg)
-        return self._to_entity(m) if m else None
-
     def remover_inativas(self, exceto: set[str]) -> int:
         ids = [
             m.id_sgg

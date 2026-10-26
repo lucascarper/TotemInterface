@@ -42,7 +42,3 @@ class SqlAlchemyUnitOfWork:
     def commit(self) -> None:
         assert self._session is not None
         self._session.commit()
-
-    def rollback(self) -> None:
-        assert self._session is not None
-        self._session.rollback()

@@ -65,17 +65,7 @@ Veja o passo a passo em [`docs/deploy-railway.md`](docs/deploy-railway.md):
 três serviços (PostgreSQL, API e front), cada um com seu próprio domínio
 público, sem precisar de servidor próprio.
 
-## Produção com Docker Compose (VPS própria)
-
-```bash
-cp .env.example .env   # ajuste SGG_MODE=http, SGG_BASE_URL, SGG_API_KEY, ADMIN_PASSWORD, JWT_SECRET
-docker compose up -d --build
-```
-
-Sobe PostgreSQL, a API (com `alembic upgrade head`) e o front em nginx em <http://localhost:8080>.
-O nginx faz proxy da API na mesma origem, então o tablet só precisa da URL do site.
-
-### Tablet em modo kiosk
+## Tablet em modo kiosk
 
 Abra `http://<servidor>:8080/totem` no navegador do tablet e use “Adicionar à tela inicial”
 (PWA em tela cheia) ou o modo kiosk do Android/iPadOS. O totem volta sozinho à tela inicial
